@@ -1,0 +1,128 @@
+paths:
+  raw_data_dir: "data/raw"
+  raw_csv_pattern: "data/raw/*.csv"
+  output_dir: "data/processed"
+  node_mappings_dir: "data/processed/node_mappings"
+  edge_lists_dir: "data/processed/edge_lists"
+  splits_dir: "data/processed/splits"
+  stats_dir: "data/processed/statistics"
+  graph_dir: "data/processed/graph"
+  small_dir: "data/processed/small"
+
+spark:
+  app_name: "REES46_HetGraph_Pipeline"
+  master: "local[*]"
+  driver_memory: "40g"
+  executor_memory: "40g"
+  local_dir: "/dev/shm/spark-local"
+  checkpoint_dir: "/dev/shm/spark-checkpoints"
+  shuffle_partitions: 64
+  default_parallelism: 12
+  aqe_enabled: true
+  adaptive_coalesce_enabled: true
+  adaptive_skew_join_enabled: true
+  broadcast_threshold: "1024m"
+  parquet_compression: "snappy"
+  max_partition_bytes: "512m"
+  memory_fraction: 0.78
+  storage_fraction: 0.12
+
+  driver_max_result_size: "12g"
+  arrow_enabled: true
+  heartbeat_interval: "120s"
+  network_timeout: "600s"
+  session_timezone: "UTC"
+
+protocol:
+  # MOT duong xu ly du lieu duy nhat tren TOAN BO du lieu.
+  # Vocab cap chi muc cho MOI user/item -> moi node co index on dinh, khong node nao
+  # bi drop khoi val/test. Metadata category/brand lay tu moi row (listing-time) de
+  # moi node deu co content. Mo hinh nhan toan bo du lieu va tu hoc cach goi y.
+  name: "all_data_new_purchase_full_ranking"
+  behaviors: ["view", "cart", "purchase"]
+  target_behavior: "purchase"
+  split_timezone: "UTC"
+  target: "new_purchase"
+  ground_truth: "all_new_purchases"
+  drop_repeated_train_purchases_from_eval: true
+  candidate_set: "all_items"
+
+filter:
+  min_user_interactions: 5
+  min_item_interactions: 5
+  min_train_user_purchases: 5
+  min_train_item_purchases: 5
+  iterative_filter_rounds: 3
+  require_purchase: true
+  fill_missing_brand: true
+  unknown_brand: "__UNKNOWN_BRAND__"
+  unknown_category: "__UNKNOWN_CATEGORY__"
+  unknown_session: "__UNKNOWN_SESSION__"
+  category_level: "top"
+
+split:
+  # REES46: Oct 2019 - Apr 2020
+  # Train: Oct 2019 - Feb 2020 (5 tháng)
+  # Val: Mar 2020 (1 tháng)
+  # Test: Apr 2020 (1 tháng)
+  train_end: "2020-02-29"
+  val_end: "2020-03-31"
+
+artifacts:
+  save_edge_timestamps: true
+  save_ground_truth_parquet: true
+  save_ground_truth_pickle: true
+  save_train_events_parquet: true
+
+sequence:
+  enabled: true
+  max_len: 50
+  event_order_tie_breaker: ["timestamp", "behavior_id", "item_idx"]
+
+behavior:
+  ids:
+    view: 0
+    cart: 1
+    purchase: 2
+  weights:
+    view: 1.0
+    cart: 3.0
+    purchase: 5.0
+
+evaluation:
+  full_ranking: true
+  primary_metric: "NDCG@20"
+  ks: [1, 5, 10, 20, 50]
+  metrics: ["HR@1", "HR@5", "HR@10", "HR@20", "HR@50", "NDCG@1", "NDCG@5", "NDCG@10", "NDCG@20", "NDCG@50"]
+  ground_truth: "all_new_purchases"
+  mask_behaviors_primary: ["purchase"]
+  mask_behaviors_seen_all: ["view", "cart", "purchase"]
+
+graph:
+  node_types:
+    - user
+    - product
+    - category
+    - brand
+  behavior_edge_types:
+    - view
+    - cart
+    - purchase
+  structural_edge_types:
+    - belongsTo
+    - producedBy
+  target_behavior: "purchase"
+  behavior_weights:
+    view: 1.0
+    cart: 3.0
+    purchase: 5.0
+
+sampling:
+  create_small_version: true
+  small_num_users: 100000
+
+sanity:
+  fail_on_future_train_edge: true
+  fail_on_ground_truth_collapse: true
+  fail_on_eval_positive_in_primary_mask: true
+  fail_on_unexpected_behavior: true
