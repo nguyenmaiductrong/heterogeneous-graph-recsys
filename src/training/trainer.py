@@ -487,24 +487,7 @@ def train_epoch(
                     view_emb_cl = beh_embs["view"][common]
                     purch_emb_cl = beh_embs["purchase"][common]
 
-            # ---- Cold-robust: forward phu cold-simulated cho distillation ----
-            # Main forward (tren) van WARM -> BPR/CL khong doi (regression-safe).
-            # Forward nay mo phong cold (ID-dropout + history-dropout), align theo
-            # cung node order voi warm vi chi xoa edge / thay self-embedding.
-            ue_cold = ie_cold = None
             run_cold = cold_on and (cold_every_k <= 1 or (step % cold_every_k == 0))
-            if run_cold:
-                cold_mask = None
-                if cold_p_id > 0:
-                    cm_u = torch.rand(
-                        subgraph["user"].x.size(0), device=device, generator=generator
-                    ) < cold_p_id
-                    cm_p = torch.rand(
-                        subgraph["product"].x.size(0), device=device, generator=generator
-                    ) < cold_p_id
-                    cold_mask = {"user": cm_u, "product": cm_p}
-                sub_cold = _make_cold_subgraph(subgraph, cold_p_hist, generator)
-                ue_cold, ie_cold = model(sub_cold, ref_time=ref_time, cold_mask=cold_mask)
 
         if not behavior_losses:
             n_skipped += 1
@@ -515,29 +498,62 @@ def train_epoch(
             view_emb=view_emb_cl,
             purchase_emb=purch_emb_cl,
         )
-
-        if ue_cold is not None:
-            l_cold = cold_consistency_loss(ue_cold, user_emb.detach()) + cold_consistency_loss(
-                ie_cold, item_emb.detach()
-            )
-            loss = loss + cold_lambda * l_cold
-            log["loss/cold"] = float(l_cold.item())
-            total_cold_loss += float(l_cold.item())
-            n_cold_steps += 1
         if not torch.isfinite(loss):
             raise FloatingPointError(
                 f"Non-finite training loss at step={step}: "
                 + ", ".join(f"{k}={v}" for k, v in log.items())
             )
 
+        # Backward warm TRUOC khi forward cold: cold loss distill ve warm emb DA
+        # detach nen hai graph doc lap; giu ca hai activation graph cung luc la
+        # nguyen nhan OOM. Gradient hai backward tu cong don truoc khi step.
         if amp:
             scaler.scale(loss).backward()
+        else:
+            loss.backward()
+
+        # ---- Cold-robust: forward phu cold-simulated cho distillation ----
+        # Main forward (tren) van WARM -> BPR/CL khong doi (regression-safe).
+        # Forward nay mo phong cold (ID-dropout + history-dropout), align theo
+        # cung node order voi warm vi chi xoa edge / thay self-embedding.
+        if run_cold:
+            warm_user_t = user_emb.detach()
+            warm_item_t = item_emb.detach()
+            del user_emb, item_emb, beh_embs
+            cold_mask = None
+            if cold_p_id > 0:
+                cm_u = torch.rand(
+                    subgraph["user"].x.size(0), device=device, generator=generator
+                ) < cold_p_id
+                cm_p = torch.rand(
+                    subgraph["product"].x.size(0), device=device, generator=generator
+                ) < cold_p_id
+                cold_mask = {"user": cm_u, "product": cm_p}
+            sub_cold = _make_cold_subgraph(subgraph, cold_p_hist, generator)
+            with torch.amp.autocast(
+                "cuda", dtype=_amp_dtype, enabled=amp and device.type == "cuda"
+            ):
+                ue_cold, ie_cold = model(sub_cold, ref_time=ref_time, cold_mask=cold_mask)
+                l_cold = cold_consistency_loss(ue_cold, warm_user_t) + cold_consistency_loss(
+                    ie_cold, warm_item_t
+                )
+            del sub_cold, ue_cold, ie_cold
+            if not torch.isfinite(l_cold):
+                raise FloatingPointError(f"Non-finite cold loss at step={step}")
+            if amp:
+                scaler.scale(cold_lambda * l_cold).backward()
+            else:
+                (cold_lambda * l_cold).backward()
+            log["loss/cold"] = float(l_cold.item())
+            total_cold_loss += float(l_cold.item())
+            n_cold_steps += 1
+
+        if amp:
             scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
             scaler.step(optimizer)
             scaler.update()
         else:
-            loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
             optimizer.step()
 

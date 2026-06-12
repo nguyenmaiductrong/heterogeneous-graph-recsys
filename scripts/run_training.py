@@ -16,6 +16,9 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Giam phan manh allocator CUDA; phai set truoc khi torch khoi tao CUDA context.
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 import numpy as np
 import pandas as pd
 import torch
