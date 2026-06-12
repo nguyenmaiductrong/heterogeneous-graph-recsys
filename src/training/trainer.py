@@ -646,7 +646,6 @@ def eval_epoch(
     sampler_seed: int | None = None,
     ref_time: float | None = None,
     user_is_cold: torch.Tensor | None = None,
-    item_is_cold: torch.Tensor | None = None,
 ) -> dict[str, float]:
     valid_users = list(ground_truth.keys())
 
@@ -690,7 +689,6 @@ def eval_epoch(
         batch_size=batch_size,
         mode="full_tiled",
         user_segment=user_segment,
-        item_is_cold=item_is_cold,
     )
 
 
@@ -750,7 +748,6 @@ def train(
     device: torch.device,
     eval_ref_time: float | None = None,
     user_is_cold: torch.Tensor | None = None,
-    item_is_cold: torch.Tensor | None = None,
 ) -> None:
     # Reproducibility: re-seed at the start of training so the RNG state here
     # is fixed regardless of how much randomness data/model setup consumed.
@@ -954,7 +951,6 @@ def train(
                 sampler_seed=cfg.eval_seed,
                 ref_time=eval_ref_time,
                 user_is_cold=user_is_cold,
-                item_is_cold=item_is_cold,
             )
 
             row += " | " + _format_main_metrics(metrics)
@@ -1032,7 +1028,6 @@ def train(
             sampler_seed=cfg.eval_seed,
             ref_time=eval_ref_time,
             user_is_cold=user_is_cold,
-            item_is_cold=item_is_cold,
         )
         logger.info(
             "FINAL VAL full-rank eval on best.pt: %s",

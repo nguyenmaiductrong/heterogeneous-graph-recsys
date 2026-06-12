@@ -297,17 +297,14 @@ def main():
     eval_ref_time = float(train_triplets[:, 3].max().item())
     logger.info(f"Eval reference time: {eval_ref_time}")
 
-    # Cold-start masks (giao thuc inductive) — optional, dung cho eval phan nhom.
-    user_is_cold = item_is_cold = None
+    # Cold-start mask (giao thuc inductive) — optional, dung cho eval phan nhom user.
+    user_is_cold = None
     user_cold_path = data_dir / "user_is_cold.npy"
-    item_cold_path = data_dir / "item_is_cold.npy"
-    if user_cold_path.exists() and item_cold_path.exists():
+    if user_cold_path.exists():
         user_is_cold = torch.from_numpy(np.load(user_cold_path)).bool()
-        item_is_cold = torch.from_numpy(np.load(item_cold_path)).bool()
         logger.info(
-            "Loaded cold masks: cold_user=%d/%d, cold_item=%d/%d",
+            "Loaded cold mask: cold_user=%d/%d",
             int(user_is_cold.sum()), user_is_cold.numel(),
-            int(item_is_cold.sum()), item_is_cold.numel(),
         )
         if train_cfg.cold_lambda <= 0:
             logger.warning(
@@ -331,7 +328,6 @@ def main():
         device=device,
         eval_ref_time=eval_ref_time,
         user_is_cold=user_is_cold,
-        item_is_cold=item_is_cold,
     )
 
 

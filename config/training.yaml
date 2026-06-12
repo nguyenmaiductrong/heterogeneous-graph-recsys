@@ -1,10 +1,10 @@
 data:
   data_dir: /content/data/
   node_counts:
-    brand: 1919
+    brand: 3470
     category: 14
-    product: 29892
-    user: 203063
+    product: 100775
+    user: 245778
   struct_dir: /content/data/node_mappings
 
 model:
@@ -57,11 +57,11 @@ training:
   warmup_epochs: 3
   max_grad_norm: 1.0
   cl_every_k: 2
-  max_view_triplets: 3000000
+  max_view_triplets: -1
   num_neg: 32
   num_workers: 8
   patience: 5
-  save_dir: checkpoints-final-l4
+  save_dir: checkpoints-recsys-v1
   weight_decay: 1.0e-02
   pin_memory: true
   persistent_workers: true
@@ -74,11 +74,11 @@ evaluation:
   metrics: ["HR@1", "HR@5", "HR@10", "HR@20", "HR@50", "NDCG@1", "NDCG@5", "NDCG@10", "NDCG@20", "NDCG@50"]
 
 wandb:
-  artifact_name: bpatmp-final-l4
+  artifact_name: bpatmp-recsys-v1
   enabled: true
   entity: nguyenmaiductrong37-h-c-vi-n-c-ng-ngh-b-u-ch-nh-vi-n-th-ng
   project: bpatmp-recsys
-  run_name: bpatmp-final-l4
+  run_name: bpatmp-recsys-v1
   save_every: 1
 
 a100:

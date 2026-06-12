@@ -35,14 +35,11 @@ class TemporalSplitEvaluator:
         user_batch: int = 512,
         item_tile: int = 16384,
         user_segment: "torch.Tensor | None" = None,
-        item_is_cold: "torch.Tensor | None" = None,
     ) -> dict[str, float]:
         """Tiled full-rank scoring. Peak VRAM ~ O(user_batch * item_tile).
 
         user_segment: optional bool [n_eval] cung thu tu eval_user_ids — True = cold-user.
             Khi co, bo sung metric warm_user/* va cold_user/*.
-        item_is_cold: optional bool [n_items] — khi co, bo sung cold_item/Recall@k
-            (ti le ground-truth item cold duoc thu hoi trong top-k).
         Metric tong the (HR@k, NDCG@k) giu nguyen — segment chi la bo sung.
         """
         eval_input.validate()
@@ -55,12 +52,6 @@ class TemporalSplitEvaluator:
             raise ValueError(
                 f"user_segment len {seg.numel()} != n_eval {n_eval}"
             )
-        item_cold = item_is_cold.to(device).bool() if item_is_cold is not None else None
-        if item_cold is not None and item_cold.numel() != n_items:
-            raise ValueError(
-                f"item_is_cold len {item_cold.numel()} != n_items {n_items}"
-            )
-
         dtype = torch.float16 if device.type == "cuda" else torch.float32
         item_embs = eval_input.item_embeddings.to(device=device, dtype=dtype)
 
@@ -102,9 +93,6 @@ class TemporalSplitEvaluator:
                     seg_sums[f"{pref}/NDCG@{k}"] = 0.0
             n_cold_user = int(seg.sum().item())
             n_warm_user = n_eval - n_cold_user
-        # cold-item recall accumulators
-        cold_item_hit: dict[int, float] = {k: 0.0 for k in self.ks} if item_cold is not None else {}
-        cold_item_den = 0.0
 
         for u_start in range(0, n_eval, user_batch):
             u_end = min(u_start + user_batch, n_eval)
@@ -143,12 +131,6 @@ class TemporalSplitEvaluator:
 
             seg_b = seg[u_start:u_end] if seg is not None else None
 
-            # cold-item recall: per-(user, gt-slot) co nam trong top-k khong
-            if item_cold is not None:
-                gt_valid = batch_gt >= 0  # [B, max_pos]
-                gt_cold = gt_valid & item_cold[batch_gt.clamp(min=0)]
-                cold_item_den += float(gt_cold.sum().item())
-
             for k in self.ks:
                 hr_u = hits[:, :k].any(dim=-1).float()  # [B]
                 dcg = (hits[:, :k].float() * ndcg_w[:k]).sum(dim=-1)
@@ -173,13 +155,6 @@ class TemporalSplitEvaluator:
                     seg_sums[f"warm_user/HR@{k}"] += hr_u[sums_warm_mask].sum().item()
                     seg_sums[f"warm_user/NDCG@{k}"] += ndcg_u[sums_warm_mask].sum().item()
 
-                if item_cold is not None:
-                    # gt item nam trong top-k: [B, max_pos]
-                    gt_in_topk = (
-                        batch_gt.unsqueeze(-1) == top_idx[:, :k].unsqueeze(1)
-                    ).any(dim=-1) & gt_valid
-                    cold_item_hit[k] += float((gt_in_topk & gt_cold).sum().item())
-
             del u_emb, top_vals, top_idx, hits
 
         del item_embs
@@ -200,13 +175,6 @@ class TemporalSplitEvaluator:
             out["cold_user/n"] = float(n_cold_user)
             out["warm_user/n"] = float(n_warm_user)
 
-        if item_cold is not None:
-            for k in self.ks:
-                out[f"cold_item/Recall@{k}"] = (
-                    cold_item_hit[k] / cold_item_den if cold_item_den > 0 else 0.0
-                )
-            out["cold_item/n_gt"] = float(cold_item_den)
-
         return out
 
     def evaluate(
@@ -215,7 +183,6 @@ class TemporalSplitEvaluator:
         batch_size: int = 512,
         mode: str | None = None,
         user_segment: "torch.Tensor | None" = None,
-        item_is_cold: "torch.Tensor | None" = None,
     ) -> dict[str, float]:
         if mode is not None and mode not in ("full", "full_tiled"):
             logger.warning(
@@ -226,7 +193,6 @@ class TemporalSplitEvaluator:
             eval_input,
             user_batch=batch_size,
             user_segment=user_segment,
-            item_is_cold=item_is_cold,
         )
 
 

@@ -154,9 +154,7 @@ def test_eval() -> None:
     base = evaluator.evaluate(ev)
     seg = torch.zeros(n_eval, dtype=torch.bool)
     seg[::3] = True  # ~1/3 cold users
-    item_cold = torch.zeros(n_items, dtype=torch.bool)
-    item_cold[::2] = True
-    segged = evaluator.evaluate(ev, user_segment=seg, item_is_cold=item_cold)
+    segged = evaluator.evaluate(ev, user_segment=seg)
 
     # overall khong doi (regression)
     for k in (1, 5, 10, 20):
@@ -171,14 +169,6 @@ def test_eval() -> None:
         assert abs(mix - segged[f"HR@{k}"]) < 1e-9, (k, mix, segged[f"HR@{k}"])
     assert segged["cold_user/n"] == n_cold and segged["warm_user/n"] == n_warm
     print(f"[D2] warm/cold split dung (cold={n_cold}, warm={n_warm}) OK")
-
-    # cold-item recall hop le
-    for k in (1, 5, 10, 20):
-        r = segged[f"cold_item/Recall@{k}"]
-        assert 0.0 <= r <= 1.0, (k, r)
-    # recall khong giam theo k
-    assert segged["cold_item/Recall@20"] >= segged["cold_item/Recall@1"] - 1e-9
-    print(f"[D3] cold_item Recall@20={segged['cold_item/Recall@20']:.3f} (n_gt={segged['cold_item/n_gt']:.0f}) OK")
 
     print("\nSMOKE PHASE D: PASSED")
 
