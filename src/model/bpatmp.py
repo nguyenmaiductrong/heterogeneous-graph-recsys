@@ -219,6 +219,7 @@ class TemporalAttention(nn.Module):
         rho: int,
         beta: Tensor,
         dst_idx: Tensor,
+        n_dst: int,
     ) -> Tuple[Tensor, Tensor]:
         """
         Args:
@@ -228,6 +229,8 @@ class TemporalAttention(nn.Module):
             rho:     int       relation index
             beta:    [E]       behavior index per edge (0-3)
             dst_idx: [E]       destination node indices
+            n_dst:   int       number of destination nodes (avoids a GPU sync
+                               from index.max().item() inside the softmax)
 
         Returns:
             alpha: [E]  attention weights (scatter-softmax normalised per dst)
@@ -246,7 +249,7 @@ class TemporalAttention(nn.Module):
         decay = lam[beta] * torch.log1p(delta_t / self.tau)
 
         logit = qk + bias + time_bias - decay
-        alpha = self._scatter_softmax(logit, dst_idx)
+        alpha = self._scatter_softmax(logit, dst_idx, n_dst)
 
         c = self.c_rho_beta[rho, beta]
         r = self.r_rho_beta[rho, beta]
@@ -258,9 +261,8 @@ class TemporalAttention(nn.Module):
         return alpha, gate
 
     @staticmethod
-    def _scatter_softmax(logit: Tensor, index: Tensor) -> Tensor:
+    def _scatter_softmax(logit: Tensor, index: Tensor, N: int) -> Tensor:
         """Numerically stable softmax grouped by destination node."""
-        N = int(index.max().item()) + 1
         max_val = logit.new_full((N,), torch.finfo(logit.dtype).min)
         max_val.scatter_reduce_(0, index, logit.detach(), reduce="amax", include_self=True)
         exp_logit = (logit - max_val[index]).exp()
@@ -390,10 +392,12 @@ class BPATMPConv(nn.Module):
                 msg = torch.einsum("oi,ei->eo", W, h_src)
                 beta_tensor = torch.full((E,), beta_idx, device=ref.device, dtype=torch.long)
 
-            alpha, gate = self.temporal_attn(h_src, h_dst, delta_t, rho, beta_tensor, dst_idx)
+            N_dst = x_dict[dst_type].size(0)
+            alpha, gate = self.temporal_attn(
+                h_src, h_dst, delta_t, rho, beta_tensor, dst_idx, N_dst
+            )
 
             weighted = (alpha * gate).unsqueeze(-1) * msg
-            N_dst = x_dict[dst_type].size(0)
             bucket = BEH_BUCKETS[_BEH_IDX[edge_name]]
             if agg_pb[dst_type][bucket] is None:
                 agg_pb[dst_type][bucket] = weighted.new_zeros(N_dst, self.out_dim)

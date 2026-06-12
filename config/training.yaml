@@ -12,12 +12,13 @@ model:
   embed_dim: 256
   n_layers: 3
   rank: 64
-  use_grad_checkpoint: false
+  use_grad_checkpoint: true  # 3 layer giu het activation -> OOM 40GB; checkpoint doi ~30% compute lay ~3x memory
   n_intents: 64
 
 sampler:
-  hop1_budget: 16
-  hop2_budget: 8
+  hop1_budget: 12   # 16 -> 12: giam ~25% canh/node local; tang lai 16 neu NDCG tut
+  hop2_budget: 1    # moi product co DUNG 1 category + 1 brand (parquet 29892 dong / 29892 product);
+                    # budget=8 with replacement chi tao 8 ban sao y het moi canh structural (~85% tong canh) -> x8 memory+time vo ich
   hop1_sample_replace: true
 
 loss:
