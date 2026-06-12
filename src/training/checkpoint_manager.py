@@ -304,6 +304,8 @@ class CheckpointManager:
 
     def _cleanup_old_checkpoints(self, keep: Path) -> None:
         for pt in list(self.local_dir.glob("*.pt")) + list(self.local_dir.glob("*.pth")):
+            if pt.name == "best.pt":
+                continue
             if pt.resolve() != keep.resolve():
                 pt.unlink()
                 logger.info("Removed old checkpoint: %s", pt)

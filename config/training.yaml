@@ -22,7 +22,7 @@ sampler:
   hop1_sample_replace: true
 
 loss:
-  lambda_cl: 0.15
+  lambda_cl: 0.10
   tau: 0.1
   alpha: 0.5
   w_min: 0.05
@@ -33,8 +33,8 @@ loss:
 # p_hist) duoc keo ve embedding day-du-lich-su (cosine); forward chinh giu nguyen.
 low_history:
   p_id: 0.15        # xac suat thay self-embedding seed bang slot residual
-  p_hist: 0.30      # xac suat xoa behavior edge cua seed user (mo phong thieu lich su)
-  lambda_cold: 0.1  # 0 = tat distillation. Bat dau dropout-only roi tang dan.
+  p_hist: 0.20      # xac suat xoa behavior edge cua seed user (mo phong thieu lich su)
+  lambda_cold: 0.05 # 0 = tat distillation. Bat dau dropout-only roi tang dan.
   cold_every_k: 4   # chay forward phu moi K step. Tang 2->4 bu chi phi forward
                     # chinh tang khi temporal batching giu lai behavior edge
                     # (truoc day ref_time=min batch i.i.d. drop ~het edge).
@@ -52,24 +52,26 @@ training:
   seed: 42
   deterministic: false
   l2_lambda: 1.0e-05
-  lr: 8.0e-04
+  lr: 5.0e-04
   min_lr: 1.0e-06
-  warmup_epochs: 3
+  warmup_epochs: 5
   max_grad_norm: 1.0
   cl_every_k: 2
   max_view_triplets: -1
   num_neg: 32
   num_workers: 8
-  patience: 5
+  patience: 8
   save_dir: checkpoints-recsys-v1
   weight_decay: 1.0e-02
   pin_memory: true
   persistent_workers: true
   prefetch_factor: 4
+  progress_bar: false
+  quiet_checkpoint_logs: true
 
 evaluation:
   full_ranking: true
-  primary_metric: "NDCG@20"
+  primary_metric: "NDCG@10"
   ks: [1, 5, 10, 20, 50]
   metrics: ["HR@1", "HR@5", "HR@10", "HR@20", "HR@50", "NDCG@1", "NDCG@5", "NDCG@10", "NDCG@20", "NDCG@50"]
 

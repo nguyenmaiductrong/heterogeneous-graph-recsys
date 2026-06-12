@@ -147,6 +147,8 @@ class TrainConfig:
     prefetch_factor: int = 2
     log_every: int = 50
     empty_cache_freq: int = 0
+    progress_bar: bool = True
+    quiet_checkpoint_logs: bool = False
 
     @classmethod
     def from_yaml(cls, cfg: dict) -> "TrainConfig":
@@ -221,6 +223,8 @@ class TrainConfig:
             prefetch_factor=t.get("prefetch_factor", cls.prefetch_factor),
             log_every=w.get("log_every", cls.log_every),
             empty_cache_freq=a100.get("empty_cache_freq", cls.empty_cache_freq),
+            progress_bar=bool(t.get("progress_bar", cls.progress_bar)),
+            quiet_checkpoint_logs=bool(t.get("quiet_checkpoint_logs", cls.quiet_checkpoint_logs)),
         )
 
 
@@ -372,6 +376,7 @@ def train_epoch(
     cold_p_hist: float = 0.0,
     cold_lambda: float = 0.0,
     cold_every_k: int = 2,
+    progress_bar: bool = True,
 ) -> dict[str, float]:
     model.train()
     total_loss = 0.0
@@ -383,7 +388,7 @@ def train_epoch(
     n_skipped = 0  # batches dropped because no positive items found in subgraph
     purchase_id = BEHAVIOR_TYPES.index("purchase")
 
-    pbar = tqdm(dataloader, desc="train", leave=False, dynamic_ncols=True)
+    pbar = tqdm(dataloader, desc="train", leave=False, dynamic_ncols=True, disable=not progress_bar)
     for step, raw_batch in enumerate(pbar):
         raw_batch = raw_batch.to(device)
         users_g = raw_batch[:, 0]
@@ -563,10 +568,11 @@ def train_epoch(
         total_loss += log["loss/total"]
         total_cl_loss += float(log.get("loss/cl", 0.0))
         n_steps += 1
-        pbar.set_postfix(
-            loss=f"{log['loss/total']:.4f}",
-            cl=f"{log.get('loss/cl', 0.0):.4f}",
-        )
+        if progress_bar:
+            pbar.set_postfix(
+                loss=f"{log['loss/total']:.4f}",
+                cl=f"{log.get('loss/cl', 0.0):.4f}",
+            )
 
     if n_skipped > 0:
         logger.warning(
@@ -594,6 +600,8 @@ def export_embeddings(
     use_bf16: bool = True,
     ref_time: float | None = None,
     sampler_seed: int | None = None,
+    user_is_cold: torch.Tensor | None = None,
+    item_is_cold: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     model.eval()
     d = model.embed_dim
@@ -609,8 +617,12 @@ def export_embeddings(
             seed_type="product",
             generator=sampler_generator,
         ).to(device)
+        cold_mask = None
+        if item_is_cold is not None and "product" in sub.node_types:
+            node_ids = sub["product"].x.cpu()
+            cold_mask = {"product": item_is_cold.to("cpu")[node_ids].to(device).bool()}
         with torch.amp.autocast("cuda", dtype=_amp_dtype, enabled=device.type == "cuda"):
-            _, item_local = model(sub, ref_time=ref_time)
+            _, item_local = model(sub, ref_time=ref_time, cold_mask=cold_mask)
         item_emb[start:end] = item_local.float().cpu()
 
     user_emb = torch.zeros(len(user_ids), d)
@@ -622,8 +634,12 @@ def export_embeddings(
             seed_type="user",
             generator=sampler_generator,
         ).to(device)
+        cold_mask = None
+        if user_is_cold is not None and "user" in sub.node_types:
+            node_ids = sub["user"].x.cpu()
+            cold_mask = {"user": user_is_cold.to("cpu")[node_ids].to(device).bool()}
         with torch.amp.autocast("cuda", dtype=_amp_dtype, enabled=device.type == "cuda"):
-            u_local, _ = model(sub, ref_time=ref_time)
+            u_local, _ = model(sub, ref_time=ref_time, cold_mask=cold_mask)
         user_emb[start:end] = u_local.float().cpu()
 
     return user_emb, item_emb
@@ -646,6 +662,7 @@ def eval_epoch(
     sampler_seed: int | None = None,
     ref_time: float | None = None,
     user_is_cold: torch.Tensor | None = None,
+    item_is_cold: torch.Tensor | None = None,
 ) -> dict[str, float]:
     valid_users = list(ground_truth.keys())
 
@@ -670,6 +687,8 @@ def eval_epoch(
         use_bf16=use_bf16,
         ref_time=ref_time,
         sampler_seed=seed if sampler_seed is None else sampler_seed,
+        user_is_cold=user_is_cold,
+        item_is_cold=item_is_cold,
     )
 
     eval_input = EvalInput(
@@ -748,6 +767,7 @@ def train(
     device: torch.device,
     eval_ref_time: float | None = None,
     user_is_cold: torch.Tensor | None = None,
+    item_is_cold: torch.Tensor | None = None,
 ) -> None:
     # Reproducibility: re-seed at the start of training so the RNG state here
     # is fixed regardless of how much randomness data/model setup consumed.
@@ -866,6 +886,8 @@ def train(
     wandb_run = None
     if cfg.use_wandb:
         from src.training.checkpoint_manager import CheckpointManager
+        if cfg.quiet_checkpoint_logs:
+            logging.getLogger("src.training.checkpoint_manager").setLevel(logging.WARNING)
 
         wandb_manager = CheckpointManager(
             project=cfg.wandb_project,
@@ -908,7 +930,12 @@ def train(
     no_improve = 0
     metrics = {}
 
-    epoch_pbar = tqdm(range(start_epoch, cfg.epochs), desc="epochs", dynamic_ncols=True)
+    epoch_pbar = tqdm(
+        range(start_epoch, cfg.epochs),
+        desc="epochs",
+        dynamic_ncols=True,
+        disable=not cfg.progress_bar,
+    )
     for epoch in epoch_pbar:
         train_log = train_epoch(
             model,
@@ -931,6 +958,7 @@ def train(
             cold_p_hist=cfg.cold_p_hist,
             cold_lambda=cfg.cold_lambda,
             cold_every_k=cfg.cold_every_k,
+            progress_bar=cfg.progress_bar,
         )
         train_loss = train_log["train/loss"]
         train_log["train/lr"] = float(optimizer.param_groups[0]["lr"])
@@ -956,6 +984,7 @@ def train(
                 sampler_seed=cfg.eval_seed,
                 ref_time=eval_ref_time,
                 user_is_cold=user_is_cold,
+                item_is_cold=item_is_cold,
             )
 
             row += " | " + _format_main_metrics(metrics)
@@ -981,7 +1010,8 @@ def train(
             else:
                 no_improve += 1
 
-        epoch_pbar.set_postfix(postfix)
+        if cfg.progress_bar:
+            epoch_pbar.set_postfix(postfix)
         logger.info(row)
 
         _save_checkpoint(save_dir, epoch, model, optimizer, scaler, train_loss, metrics)
@@ -1033,6 +1063,7 @@ def train(
             sampler_seed=cfg.eval_seed,
             ref_time=eval_ref_time,
             user_is_cold=user_is_cold,
+            item_is_cold=item_is_cold,
         )
         logger.info(
             "FINAL VAL full-rank eval on best.pt: %s",

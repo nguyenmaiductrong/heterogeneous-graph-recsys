@@ -297,9 +297,12 @@ def main():
     eval_ref_time = float(train_triplets[:, 3].max().item())
     logger.info(f"Eval reference time: {eval_ref_time}")
 
-    # Cold-start mask (giao thuc inductive) — optional, dung cho eval phan nhom user.
+    # Cold-start masks (giao thuc inductive) — optional. User mask vừa dùng để
+    # phân nhóm metric, vừa dùng cold slot khi export embedding eval.
     user_is_cold = None
+    item_is_cold = None
     user_cold_path = data_dir / "user_is_cold.npy"
+    item_cold_path = data_dir / "item_is_cold.npy"
     if user_cold_path.exists():
         user_is_cold = torch.from_numpy(np.load(user_cold_path)).bool()
         logger.info(
@@ -313,6 +316,12 @@ def main():
             )
     else:
         logger.info("Khong tim thay cold masks — eval khong phan nhom cold/warm.")
+    if item_cold_path.exists():
+        item_is_cold = torch.from_numpy(np.load(item_cold_path)).bool()
+        logger.info(
+            "Loaded cold mask: cold_item=%d/%d",
+            int(item_is_cold.sum()), item_is_cold.numel(),
+        )
 
     train(
         model=model,
@@ -328,6 +337,7 @@ def main():
         device=device,
         eval_ref_time=eval_ref_time,
         user_is_cold=user_is_cold,
+        item_is_cold=item_is_cold,
     )
 
 

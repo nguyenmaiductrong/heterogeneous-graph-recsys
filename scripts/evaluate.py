@@ -95,6 +95,17 @@ def main():
         exclude_items = {u: list(v) for u, v in pickle.load(f).items()}
     logger.info("Loaded exclude mask: %s", mask_path.name)
 
+    user_is_cold = None
+    item_is_cold = None
+    user_cold_path = data_dir / "user_is_cold.npy"
+    item_cold_path = data_dir / "item_is_cold.npy"
+    if user_cold_path.exists():
+        user_is_cold = torch.from_numpy(np.load(user_cold_path)).bool()
+        logger.info("Loaded cold user mask: %d/%d", int(user_is_cold.sum()), user_is_cold.numel())
+    if item_cold_path.exists():
+        item_is_cold = torch.from_numpy(np.load(item_cold_path)).bool()
+        logger.info("Loaded cold item mask: %d/%d", int(item_is_cold.sum()), item_is_cold.numel())
+
     # --- model ---
     from src.model.bpatmp import BPATMPModel
     from src.graph.neighbor_sampler import BehaviorAwareNeighborSampler, NeighborSamplerConfig
@@ -142,6 +153,8 @@ def main():
         use_bf16=tc.get("use_bf16", True),
         subsample=0,
         ref_time=ref_time,
+        user_is_cold=user_is_cold,
+        item_is_cold=item_is_cold,
     )
 
     print(f"\n{'='*45}\n  {args.split} | epoch {ckpt.get('epoch', '?')} | {ckpt_path.name}")
