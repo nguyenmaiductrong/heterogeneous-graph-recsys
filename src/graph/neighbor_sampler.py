@@ -90,6 +90,14 @@ def _batch_sample_csr(
     device = ptr.device
     seeds = seeds.long().view(-1)
     bsz = seeds.numel()
+    n_src = ptr.size(0) - 1
+    max_seed = int(seeds.max().item()) if bsz > 0 else -1
+    if max_seed >= n_src:
+        raise IndexError(
+            f"Seed id {max_seed} >= CSR num_src {n_src}. Sampler duoc build voi "
+            "it node hon vocab cua seed — truyen num_nodes_dict (hoac dam bao "
+            "data.num_nodes phu het id) khi khoi tao BehaviorAwareNeighborSampler."
+        )
     lo = ptr[seeds]
     hi = ptr[seeds + 1]
     deg = hi - lo
@@ -169,6 +177,16 @@ class BehaviorAwareNeighborSampler:
                     edge_ts = getattr(data[e], "edge_time", None)
                 if edge_ts is not None and edge_ts.numel() > 0:
                     edge_ts_dict[e] = edge_ts.clone()
+            # Node counts phai lay tu vocab day du (data.num_nodes), KHONG suy tu
+            # max id trong canh: node chi xuat hien o val/test (cold user/item)
+            # nam ngoai canh train -> CSR ptr ngan hon vocab -> ptr[seed+1] OOB
+            # (CUDA assert IndexKernel) khi eval seed toan bo arange(n_items).
+            if num_nodes_dict is None:
+                num_nodes_dict = {
+                    nt: int(data[nt].num_nodes)
+                    for nt in data.node_types
+                    if data[nt].num_nodes is not None
+                }
         else:
             edge_ts_dict = {}
 
