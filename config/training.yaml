@@ -35,6 +35,12 @@ low_history:
   p_id: 0.15        # xac suat thay self-embedding seed bang slot residual
   p_hist: 0.20      # xac suat xoa behavior edge cua seed user (mo phong thieu lich su)
   lambda_cold: 0.05 # 0 = tat distillation. Bat dau dropout-only roi tang dan.
+  # BPR truc tiep tren forward cold: cold user that = 0 canh train -> ca segment
+  # dung chung MOT embedding (cold slot), metric cold = chat luong mot ranking
+  # toan cuc. Distillation cosine khong toi uu ranking do nen khi item embedding
+  # drift theo personalization, cold sap dan theo epoch (quan sat run v2).
+  # lambda_bpr ep cold pathway rank purchase that len tren, bam theo item drift.
+  lambda_bpr: 0.5
   cold_every_k: 4   # chay forward phu moi K step. Tang 2->4 bu chi phi forward
                     # chinh tang khi temporal batching giu lai behavior edge
                     # (truoc day ref_time=min batch i.i.d. drop ~het edge).
@@ -85,11 +91,11 @@ evaluation:
   metrics: ["HR@1", "HR@5", "HR@10", "HR@20", "HR@50", "NDCG@1", "NDCG@5", "NDCG@10", "NDCG@20", "NDCG@50"]
 
 wandb:
-  artifact_name: recsys-graph-v2
+  artifact_name: recsys-graph-v3
   enabled: true
   entity: nguyenmaiductrong37-h-c-vi-n-c-ng-ngh-b-u-ch-nh-vi-n-th-ng
   project: recsys-graph
-  run_name: recsys-graph-v2
+  run_name: recsys-graph-v3
   save_every: 1
 
 a100:

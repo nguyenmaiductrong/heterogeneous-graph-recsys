@@ -127,10 +127,11 @@ class TrainConfig:
     neg_hard_pool: int = 200     # pool top-rank de sample hard neg
     neg_skip_top: int = 0        # bo `skip_top` rank dau khoi pool (giam false negative)
 
-    # Cold-robust training (chi kich hoat khi lambda_cold > 0)
+    # Cold-robust training (chi kich hoat khi lambda_cold > 0 hoac cold_bpr_lambda > 0)
     cold_p_id: float = 0.15       # xac suat thay self-embedding seed bang cold slot
     cold_p_hist: float = 0.30     # xac suat "cold-out" mot seed user (xoa behavior edge)
     cold_lambda: float = 0.0      # trong so distillation L_cold (0 = tat, train nhu cu)
+    cold_bpr_lambda: float = 0.0  # trong so BPR tren forward cold (toi uu truc tiep ranking cold)
     cold_every_k: int = 2         # chay forward cold moi K step
 
     # Evaluation
@@ -212,6 +213,7 @@ class TrainConfig:
             cold_p_id=float(cold.get("p_id", cls.cold_p_id)),
             cold_p_hist=float(cold.get("p_hist", cls.cold_p_hist)),
             cold_lambda=float(cold.get("lambda_cold", cls.cold_lambda)),
+            cold_bpr_lambda=float(cold.get("lambda_bpr", cls.cold_bpr_lambda)),
             cold_every_k=int(cold.get("cold_every_k", cls.cold_every_k)),
 
             # Evaluation
@@ -423,6 +425,7 @@ def train_epoch(
     cold_p_id: float = 0.0,
     cold_p_hist: float = 0.0,
     cold_lambda: float = 0.0,
+    cold_bpr_lambda: float = 0.0,
     cold_every_k: int = 2,
     neg_frac_hard: float = 0.5,
     neg_hard_pool: int = 200,
@@ -433,9 +436,12 @@ def train_epoch(
     total_loss = 0.0
     total_cl_loss = 0.0
     total_cold_loss = 0.0
+    total_cold_bpr_loss = 0.0
     n_cold_steps = 0
     n_steps = 0
-    cold_on = cold_lambda > 0.0 and (cold_p_id > 0.0 or cold_p_hist > 0.0)
+    cold_on = (cold_lambda > 0.0 or cold_bpr_lambda > 0.0) and (
+        cold_p_id > 0.0 or cold_p_hist > 0.0
+    )
     n_skipped = 0  # batches dropped because no positive items found in subgraph
     purchase_id = BEHAVIOR_TYPES.index("purchase")
 
@@ -589,6 +595,7 @@ def train_epoch(
                 ) < cold_p_id
                 cold_mask = {"user": cm_u, "product": cm_p}
             sub_cold = _make_cold_subgraph(subgraph, cold_p_hist, generator)
+            l_cold_bpr = None
             with torch.amp.autocast(
                 "cuda", dtype=_amp_dtype, enabled=amp and device.type == "cuda"
             ):
@@ -596,15 +603,44 @@ def train_epoch(
                 l_cold = cold_consistency_loss(ue_cold, warm_user_t) + cold_consistency_loss(
                     ie_cold, warm_item_t
                 )
+                # BPR truc tiep tren forward cold (DropoutNet-style). Distillation
+                # cosine chi keo cold emb ve phia warm emb — KHONG toi uu ranking:
+                # khi item embedding drift theo personalization, huong cold-slot
+                # thanh stale va cold metric sap dan theo epoch (cold user that
+                # khong co canh train nao -> ca segment dung chung MOT embedding,
+                # metric = chat luong cua mot ranking toan cuc duy nhat). BPR nay
+                # ep cold pathway rank purchase that len tren va tu bam theo item
+                # drift. Item side detach -> chi train duong user/cold-slot.
+                if cold_bpr_lambda > 0:
+                    mask_p = bev == purchase_id
+                    if mask_p.any() and N_items > 1:
+                        u_c = ue_cold[u_loc[mask_p]]
+                        pp_c = pp_loc[mask_p]
+                        neg_c = torch.randint(
+                            0, N_items - 1, (u_c.size(0), num_neg),
+                            device=device, generator=generator,
+                        )
+                        neg_c[neg_c >= pp_c.unsqueeze(-1)] += 1
+                        pos_s_c = (u_c * warm_item_t[pp_c]).sum(-1, keepdim=True)
+                        neg_s_c = torch.bmm(
+                            warm_item_t[neg_c], u_c.unsqueeze(-1)
+                        ).squeeze(-1)
+                        l_cold_bpr = bpr_loss(pos_s_c.float(), neg_s_c.float())
+            l_cold_total = cold_lambda * l_cold
+            if l_cold_bpr is not None:
+                l_cold_total = l_cold_total + cold_bpr_lambda * l_cold_bpr
             del sub_cold, ue_cold, ie_cold
-            if not torch.isfinite(l_cold):
+            if not torch.isfinite(l_cold_total):
                 raise FloatingPointError(f"Non-finite cold loss at step={step}")
             if amp:
-                scaler.scale(cold_lambda * l_cold).backward()
+                scaler.scale(l_cold_total).backward()
             else:
-                (cold_lambda * l_cold).backward()
+                l_cold_total.backward()
             log["loss/cold"] = float(l_cold.item())
             total_cold_loss += float(l_cold.item())
+            if l_cold_bpr is not None:
+                log["loss/cold_bpr"] = float(l_cold_bpr.item())
+                total_cold_bpr_loss += float(l_cold_bpr.item())
             n_cold_steps += 1
 
         if amp:
@@ -639,6 +675,7 @@ def train_epoch(
         "train/loss": total_loss / max(n_steps, 1),
         "train/cl_loss": total_cl_loss / max(n_steps, 1),
         "train/cold_loss": total_cold_loss / max(n_cold_steps, 1),
+        "train/cold_bpr_loss": total_cold_bpr_loss / max(n_cold_steps, 1),
         "train/skipped_batches": float(n_skipped),
     }
 
@@ -1037,6 +1074,7 @@ def train(
             cold_p_id=cfg.cold_p_id,
             cold_p_hist=cfg.cold_p_hist,
             cold_lambda=cfg.cold_lambda,
+            cold_bpr_lambda=cfg.cold_bpr_lambda,
             cold_every_k=cfg.cold_every_k,
             neg_frac_hard=cfg.neg_frac_hard,
             neg_hard_pool=cfg.neg_hard_pool,
