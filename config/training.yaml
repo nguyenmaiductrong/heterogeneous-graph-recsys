@@ -52,13 +52,22 @@ training:
   seed: 42
   deterministic: false
   l2_lambda: 1.0e-05
-  lr: 5.0e-04
+  # Val peak dung tai epoch ket thuc warmup (LR vua dat max) roi dung hoc =>
+  # peak LR 5e-4 qua cao voi model nay; ha xuong 3e-4 + warmup ngan hon de
+  # phan lon thoi gian train nam o vung LR on dinh + cosine decay co tac dung.
+  lr: 3.0e-04
   min_lr: 1.0e-06
-  warmup_epochs: 5
+  warmup_epochs: 2
   max_grad_norm: 1.0
   cl_every_k: 2
   max_view_triplets: -1
   num_neg: 32
+  # Hard negative: giam ty le hard (false-negative phi xa hon), pool rong hon,
+  # va BO top-20 rank khoi pool — vung top chinh la noi future positive don vao
+  # khi model kha len (khong the mask), BPR de chung xuong la pha truc tiep NDCG@10/20.
+  neg_frac_hard: 0.3
+  neg_hard_pool: 500
+  neg_skip_top: 20
   num_workers: 8
   patience: 8
   save_dir: checkpoints-recsys-v1
@@ -76,11 +85,11 @@ evaluation:
   metrics: ["HR@1", "HR@5", "HR@10", "HR@20", "HR@50", "NDCG@1", "NDCG@5", "NDCG@10", "NDCG@20", "NDCG@50"]
 
 wandb:
-  artifact_name: recsys-graph-v1
+  artifact_name: recsys-graph-v2
   enabled: true
   entity: nguyenmaiductrong37-h-c-vi-n-c-ng-ngh-b-u-ch-nh-vi-n-th-ng
   project: recsys-graph
-  run_name: recsys-graph-v1
+  run_name: recsys-graph-v2
   save_every: 1
 
 a100:

@@ -122,6 +122,11 @@ class TrainConfig:
     use_bf16: bool = True
     max_view_triplets: int = -1
 
+    # Negative sampling (xem sample_aligned_negatives_local)
+    neg_frac_hard: float = 0.5   # ty le hard neg trong num_neg
+    neg_hard_pool: int = 200     # pool top-rank de sample hard neg
+    neg_skip_top: int = 0        # bo `skip_top` rank dau khoi pool (giam false negative)
+
     # Cold-robust training (chi kich hoat khi lambda_cold > 0)
     cold_p_id: float = 0.15       # xac suat thay self-embedding seed bang cold slot
     cold_p_hist: float = 0.30     # xac suat "cold-out" mot seed user (xoa behavior edge)
@@ -198,6 +203,11 @@ class TrainConfig:
             use_bf16=t.get("use_bf16", cls.use_bf16),
             max_view_triplets=t.get("max_view_triplets", cls.max_view_triplets),
 
+            # Negative sampling
+            neg_frac_hard=float(t.get("neg_frac_hard", cls.neg_frac_hard)),
+            neg_hard_pool=int(t.get("neg_hard_pool", cls.neg_hard_pool)),
+            neg_skip_top=int(t.get("neg_skip_top", cls.neg_skip_top)),
+
             # Cold-robust training
             cold_p_id=float(cold.get("p_id", cls.cold_p_id)),
             cold_p_hist=float(cold.get("p_hist", cls.cold_p_hist)),
@@ -241,18 +251,19 @@ def _save_checkpoint(
     scaler: torch.amp.GradScaler,
     loss: float,
     metrics: dict,
+    scheduler: torch.optim.lr_scheduler._LRScheduler | None = None,
 ) -> None:
-    torch.save(
-        {
-            "epoch": epoch,
-            "model_state_dict": model.state_dict(),
-            "optimizer_state_dict": optimizer.state_dict(),
-            "scaler_state_dict": scaler.state_dict(),
-            "loss": loss,
-            "metrics": metrics,
-        },
-        save_dir / f"epoch_{epoch:03d}.pt",
-    )
+    state = {
+        "epoch": epoch,
+        "model_state_dict": model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+        "scaler_state_dict": scaler.state_dict(),
+        "loss": loss,
+        "metrics": metrics,
+    }
+    if scheduler is not None:
+        state["scheduler_state_dict"] = scheduler.state_dict()
+    torch.save(state, save_dir / f"epoch_{epoch:03d}.pt")
 
 
 def _load_checkpoint(
@@ -261,6 +272,7 @@ def _load_checkpoint(
     optimizer: torch.optim.Optimizer,
     scaler: torch.amp.GradScaler,
     device: torch.device,
+    scheduler: torch.optim.lr_scheduler._LRScheduler | None = None,
 ) -> int:
     ckpt = torch.load(ckpt_path, map_location=device)
     try:
@@ -279,6 +291,11 @@ def _load_checkpoint(
         logger.warning(
             "Optimizer/scaler state incompatible with checkpoint — starting with fresh optimizer state."
         )
+    if scheduler is not None and "scheduler_state_dict" in ckpt:
+        try:
+            scheduler.load_state_dict(ckpt["scheduler_state_dict"])
+        except (ValueError, KeyError, RuntimeError):
+            logger.warning("Scheduler state incompatible — will fast-forward instead.")
     resumed_epoch = int(ckpt["epoch"])
     logger.info(
         "Resumed from %s (epoch %d, loss=%.4f)",
@@ -337,6 +354,37 @@ def _format_main_metrics(metrics: dict[str, float]) -> str:
     return " | ".join(f"{k}={v:.4f}" for k, v in metrics.items())
 
 
+def _log_val_metrics(label: str, metrics: dict[str, float]) -> None:
+    """In val metrics thanh NHIEU dong (overall / cold_user / warm_user).
+
+    Gop het vao mot dong (~30 metric) lam console/Colab cat giua dong nen
+    HR/NDCG@1,@5 cua tung phan khuc khong doc duoc — tach dong de thay du moi k.
+    """
+    overall = {k: v for k, v in metrics.items() if "/" not in k}
+    logger.info("%s | %s", label, _format_main_metrics(overall))
+    for pref in ("cold_user", "warm_user"):
+        seg = {
+            k.split("/", 1)[1]: v
+            for k, v in metrics.items()
+            if k.startswith(pref + "/") and k != f"{pref}/n"
+        }
+        if seg:
+            n = int(metrics.get(f"{pref}/n", 0))
+            logger.info("%s | %s (n=%d) | %s", label, pref, n, _format_main_metrics(seg))
+
+
+def _best_summary(
+    best_tracks: dict[str, str],
+    best_vals: dict[str, float],
+    best_epochs: dict[str, int],
+) -> str:
+    return ", ".join(
+        f"{best_tracks[t]}={best_vals[t]:.4f} (epoch {best_epochs[t]})"
+        for t in best_tracks
+        if best_epochs[t] >= 0
+    )
+
+
 def _make_generator(device: torch.device, seed: int | None) -> torch.Generator | None:
     if seed is None:
         return None
@@ -376,6 +424,9 @@ def train_epoch(
     cold_p_hist: float = 0.0,
     cold_lambda: float = 0.0,
     cold_every_k: int = 2,
+    neg_frac_hard: float = 0.5,
+    neg_hard_pool: int = 200,
+    neg_skip_top: int = 0,
     progress_bar: bool = True,
 ) -> dict[str, float]:
     model.train()
@@ -465,6 +516,9 @@ def train_epoch(
                         history_item=history_item,
                         user_emb_b=u_emb_b.detach(),
                         item_emb_local=item_emb.detach(),
+                        frac_hard=neg_frac_hard,
+                        hard_pool=neg_hard_pool,
+                        skip_top=neg_skip_top,
                         generator=generator,
                     )
                 else:
@@ -918,15 +972,41 @@ def train(
 
     start_epoch = 0
     if wandb_manager is not None:
-        start_epoch = wandb_manager.load_checkpoint(model, optimizer, scaler, device)
+        start_epoch = wandb_manager.load_checkpoint(
+            model, optimizer, scaler, device, scheduler=scheduler
+        )
 
     if start_epoch == 0 and wandb_manager is None:
         latest_ckpt = _find_latest_checkpoint(save_dir)
         if latest_ckpt is not None:
-            start_epoch = _load_checkpoint(latest_ckpt, model, optimizer, scaler, device)
+            start_epoch = _load_checkpoint(
+                latest_ckpt, model, optimizer, scaler, device, scheduler=scheduler
+            )
+
+    # Checkpoint cu khong luu scheduler state -> moi lan resume scheduler chay lai
+    # tu step 0: LR re-warmup tu ~0 lan nua, model gan nhu khong update nhieu epoch
+    # (metric "dong bang" ngay sau diem resume). Fast-forward ve dung vi tri.
+    if start_epoch > 0 and scheduler.last_epoch <= 0:
+        ff_steps = start_epoch * steps_per_epoch
+        for _ in range(ff_steps):
+            scheduler.step()
+        logger.warning(
+            "Checkpoint khong co scheduler state — fast-forward %d steps (epoch %d), lr=%.2e",
+            ff_steps, start_epoch, optimizer.param_groups[0]["lr"],
+        )
 
     pm = cfg.primary_metric
-    best_primary = -1.0
+    # Eval set bi cold-user chiem ap dao (~88%) nen primary metric tong gan nhu
+    # la metric cua cold; warm dat dinh o epoch KHAC. Luu best rieng tung phan
+    # khuc va chi early-stop khi KHONG phan khuc nao con cai thien — neu khong,
+    # checkpoint bao cao cho warm khong phai epoch warm tot nhat.
+    best_tracks = {
+        "best": pm,
+        "best_warm": f"warm_user/{pm}",
+        "best_cold": f"cold_user/{pm}",
+    }
+    best_vals = {tag: -1.0 for tag in best_tracks}
+    best_epochs = {tag: -1 for tag in best_tracks}
     no_improve = 0
     metrics = {}
 
@@ -958,6 +1038,9 @@ def train(
             cold_p_hist=cfg.cold_p_hist,
             cold_lambda=cfg.cold_lambda,
             cold_every_k=cfg.cold_every_k,
+            neg_frac_hard=cfg.neg_frac_hard,
+            neg_hard_pool=cfg.neg_hard_pool,
+            neg_skip_top=cfg.neg_skip_top,
             progress_bar=cfg.progress_bar,
         )
         train_loss = train_log["train/loss"]
@@ -987,34 +1070,47 @@ def train(
                 item_is_cold=item_is_cold,
             )
 
-            row += " | " + _format_main_metrics(metrics)
-
             primary_val = metrics.get(pm, -1.0)
             postfix[pm.replace("@", "_")] = f"{primary_val:.4f}"
-            postfix["best_primary"] = f"{max(best_primary, primary_val):.4f}"
 
-            if primary_val > best_primary:
-                best_primary = primary_val
+            improved: list[str] = []
+            for tag, key in best_tracks.items():
+                val = metrics.get(key)
+                if val is None or val <= best_vals[tag]:
+                    continue
+                best_vals[tag] = val
+                best_epochs[tag] = epoch
+                improved.append(f"{key}={val:.4f}")
+                state = {
+                    "epoch": epoch,
+                    "model_state_dict": model.state_dict(),
+                    "metrics": metrics,
+                    "selected_by": key,
+                }
+                if tag == "best":
+                    # Chi best.pt giu optimizer/scaler (de resume); cac best
+                    # phan khuc chi can model_state_dict cho eval.
+                    state["optimizer_state_dict"] = optimizer.state_dict()
+                    state["scaler_state_dict"] = scaler.state_dict()
+                torch.save(state, save_dir / f"{tag}.pt")
+
+            if improved:
                 no_improve = 0
-                torch.save(
-                    {
-                        "epoch": epoch,
-                        "model_state_dict": model.state_dict(),
-                        "optimizer_state_dict": optimizer.state_dict(),
-                        "scaler_state_dict": scaler.state_dict(),
-                        "metrics": metrics,
-                    },
-                    save_dir / "best.pt",
-                )
-                row += "  <- best"
+                row += "  <- best: " + ", ".join(improved)
             else:
                 no_improve += 1
+            postfix["best_primary"] = f"{best_vals['best']:.4f}"
 
         if cfg.progress_bar:
             epoch_pbar.set_postfix(postfix)
         logger.info(row)
+        if (epoch + 1) % cfg.eval_every == 0 and metrics:
+            _log_val_metrics(f"Epoch {epoch:03d} | val", metrics)
 
-        _save_checkpoint(save_dir, epoch, model, optimizer, scaler, train_loss, metrics)
+        _save_checkpoint(
+            save_dir, epoch, model, optimizer, scaler, train_loss, metrics,
+            scheduler=scheduler,
+        )
 
         if wandb_manager is not None:
             wandb_run.log({**train_log, **metrics, "epoch": epoch})
@@ -1025,6 +1121,7 @@ def train(
                 scaler=scaler,
                 loss=train_loss,
                 metrics=metrics,
+                scheduler=scheduler,
             )
             if not cloud_ok:
                 logger.error(
@@ -1035,18 +1132,28 @@ def train(
 
         if no_improve >= cfg.patience:
             logger.info(
-                "Early stopping at epoch %d. Best %s=%.4f",
+                "Early stopping at epoch %d — khong phan khuc nao (overall/warm/cold) "
+                "cai thien %d lan eval lien tiep. Best: %s",
                 epoch,
-                pm,
-                best_primary,
+                cfg.patience,
+                _best_summary(best_tracks, best_vals, best_epochs),
             )
             break
 
-    best_path = save_dir / "best.pt"
-    if best_path.exists():
-        logger.info("Loading best.pt for final FULL-rank evaluation on all val users...")
-        best_ckpt = torch.load(best_path, map_location=device, weights_only=False)
-        model.load_state_dict(best_ckpt["model_state_dict"])
+    # Final FULL-rank eval cho TUNG best checkpoint: best.pt (primary tong),
+    # best_warm.pt, best_cold.pt — moi phan khuc lay ket qua o epoch tot nhat
+    # cua chinh no thay vi doc tu checkpoint chon theo metric tong.
+    for tag, key in best_tracks.items():
+        ckpt_path = save_dir / f"{tag}.pt"
+        if not ckpt_path.exists():
+            continue
+        ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
+        model.load_state_dict(ckpt["model_state_dict"])
+        ck_epoch = int(ckpt.get("epoch", -1))
+        logger.info(
+            "FULL-rank val eval: %s (epoch %d, chon theo %s)...",
+            ckpt_path.name, ck_epoch, key,
+        )
         final_val_metrics = eval_epoch(
             model,
             sampler,
@@ -1065,24 +1172,30 @@ def train(
             user_is_cold=user_is_cold,
             item_is_cold=item_is_cold,
         )
-        logger.info(
-            "FINAL VAL full-rank eval on best.pt: %s",
-            _format_main_metrics(final_val_metrics),
-        )
-        with open(save_dir / "final_val_metrics.json", "w") as f:
-            json.dump(final_val_metrics, f, indent=2)
-        if wandb_run is not None:
-            wandb_run.log(
-                {f"final/val/{k}": v for k, v in final_val_metrics.items()}
+        _log_val_metrics(f"FINAL VAL [{ckpt_path.name} @ epoch {ck_epoch}]", final_val_metrics)
+        suffix = "" if tag == "best" else f"_{tag.removeprefix('best_')}"
+        with open(save_dir / f"final_val_metrics{suffix}.json", "w") as f:
+            json.dump(
+                {
+                    "checkpoint": ckpt_path.name,
+                    "epoch": ck_epoch,
+                    "selected_by": key,
+                    "metrics": final_val_metrics,
+                },
+                f,
+                indent=2,
             )
+        if wandb_run is not None:
+            prefix = "final/val" if tag == "best" else f"final_{tag.removeprefix('best_')}/val"
+            wandb_run.log({f"{prefix}/{k}": v for k, v in final_val_metrics.items()})
 
     if wandb_run is not None:
         wandb_run.finish()
 
     logger.info(
-        "Training complete. Best %s (subsample)=%.4f. "
-        "Run test eval: python scripts/evaluate.py --checkpoint %s --split test",
-        pm,
-        best_primary,
+        "Training complete. Best (subsample eval): %s. "
+        "Run test eval: python scripts/evaluate.py --checkpoint %s --split test "
+        "(warm: best_warm.pt, cold: best_cold.pt)",
+        _best_summary(best_tracks, best_vals, best_epochs),
         save_dir / "best.pt",
     )

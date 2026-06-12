@@ -194,6 +194,7 @@ def sample_aligned_negatives_local(
     item_emb_local: torch.Tensor,
     frac_hard: float = 0.5,
     hard_pool: int = 200,
+    skip_top: int = 0,
     generator: torch.Generator | None = None,
 ) -> torch.Tensor:
     """Uniform + hard negatives, voi global history masking.
@@ -204,6 +205,11 @@ def sample_aligned_negatives_local(
     tuyet doi: dinh ranking day dac cac item user SE tuong tac (future positive
     cua val khong the mask bang history) — BPR de chung xuong la pha truc tiep
     NDCG, gay hien tuong val dat dinh som roi tut dan.
+
+    skip_top > 0: BO han `skip_top` rank dau khoi pool — cang train tot, future
+    positive cang don vao chinh vung top-k ma NDCG cham diem; sample tu rank
+    [skip_top, skip_top + hard_pool) van la negative rat kho (top ~0.5% cua
+    catalog) nhung khong de truc tiep cac item dang duoc rank dung.
     """
     device = pp_b.device
     B = pp_b.size(0)
@@ -219,8 +225,10 @@ def sample_aligned_negatives_local(
         with torch.no_grad():
             scores = user_emb_b @ item_emb_local.T
             scores.scatter_(1, pp_b.unsqueeze(1), float("-inf"))
-            pool_size = min(max(hard_pool, n_hard), N_items - 1)
-            _, pool = scores.topk(pool_size, dim=-1)
+            skip = max(0, min(int(skip_top), N_items - 1 - n_hard))
+            pool_size = min(max(hard_pool, n_hard), N_items - 1 - skip)
+            _, pool = scores.topk(skip + pool_size, dim=-1)
+            pool = pool[:, skip:]
             choice = torch.randint(
                 0, pool_size, (B, n_hard), device=device, generator=generator
             )
