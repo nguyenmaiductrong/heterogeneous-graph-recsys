@@ -7,7 +7,7 @@ from pathlib import Path
 
 import torch
 import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, Sampler
 from tqdm import tqdm
 
 from src.model.bpatmp import BPATMPModel
@@ -297,6 +297,38 @@ class InteractionDataset(Dataset):
         return self.triplets[idx]
 
 
+class TemporalBatchSampler(Sampler):
+    """Chia triplet DA SORT theo ts thanh cac chunk lien tuc; moi epoch xao tron
+    THU TU chunk (noi dung chunk giu nguyen lat thoi gian).
+
+    Voi i.i.d. shuffle, min(batch_ts) ~ dau train window nen filter nhan qua
+    `t_e < ref_time` trong model drop ~100% behavior edge luc train (eval lai giu
+    het -> train/eval mismatch). Batch theo lat thoi gian giu ref_time sat thoi
+    diem cua batch: lich su TRUOC lat van di qua filter, leakage-free khong doi.
+    """
+
+    def __init__(
+        self,
+        n: int,
+        batch_size: int,
+        generator: torch.Generator | None = None,
+        drop_last: bool = True,
+    ) -> None:
+        self.n = n
+        self.batch_size = batch_size
+        self.generator = generator
+        n_full, rem = divmod(n, batch_size)
+        self.n_batches = n_full if (drop_last or rem == 0) else n_full + 1
+
+    def __len__(self) -> int:
+        return self.n_batches
+
+    def __iter__(self):
+        for b in torch.randperm(self.n_batches, generator=self.generator).tolist():
+            start = b * self.batch_size
+            yield list(range(start, min(start + self.batch_size, self.n)))
+
+
 def _format_main_metrics(metrics: dict[str, float]) -> str:
     return " | ".join(f"{k}={v:.4f}" for k, v in metrics.items())
 
@@ -358,10 +390,11 @@ def train_epoch(
         items_g = raw_batch[:, 1]
         beh_ids = raw_batch[:, 2]
 
-        # ref_time = batch_min: every t_e < min(batch_ts) <= t_pos for ALL positives
-        # in the batch, so no future leakage. Tradeoff: late-batch positives lose
-        # access to recent context within (min, t_pos). Mitigated by large
-        # batch_size + i.i.d. shuffling so distribution is balanced.
+        # ref_time = batch_min: moi edge giu lai co t_e < min(batch_ts) <= t_pos cho
+        # MOI positive trong batch -> khong leakage. Batch la lat thoi gian lien tuc
+        # (TemporalBatchSampler) nen batch_min nam sat dau lat: lich su TRUOC lat
+        # song sot qua filter `t_e < ref_time` cua model. Positive chi mat context
+        # ben trong lat (~1/n_batches cua window) — khong dang ke.
         ref_time = float(raw_batch[:, 3].min().item()) if raw_batch.size(1) >= 4 else None
 
         unique_users = users_g.unique()
@@ -728,20 +761,41 @@ def train(
     # on CUDA falls back to the global RNG if a device generator can't be made.
     train_generator = _make_generator(device, cfg.seed)
 
-    dataset = InteractionDataset(train_triplets)
     loader_generator = torch.Generator()
     loader_generator.manual_seed(cfg.seed)
-    loader = DataLoader(
-        dataset,
-        batch_size=cfg.batch_size,
-        shuffle=True,
-        num_workers=cfg.num_workers,
-        pin_memory=cfg.pin_memory and device.type == "cuda",
-        drop_last=True,
-        persistent_workers=cfg.persistent_workers and cfg.num_workers > 0,
-        prefetch_factor=cfg.prefetch_factor if cfg.num_workers > 0 else None,
-        generator=loader_generator,
-    )
+    has_ts = train_triplets.size(1) >= 4
+    if has_ts:
+        train_triplets = train_triplets[train_triplets[:, 3].argsort()]
+    dataset = InteractionDataset(train_triplets)
+    if has_ts:
+        loader = DataLoader(
+            dataset,
+            batch_sampler=TemporalBatchSampler(
+                len(dataset), cfg.batch_size, generator=loader_generator
+            ),
+            num_workers=cfg.num_workers,
+            pin_memory=cfg.pin_memory and device.type == "cuda",
+            persistent_workers=cfg.persistent_workers and cfg.num_workers > 0,
+            prefetch_factor=cfg.prefetch_factor if cfg.num_workers > 0 else None,
+        )
+        logger.info(
+            "TemporalBatchSampler: %d time-slice batches of %d (triplets sorted by ts)",
+            len(dataset) // cfg.batch_size,
+            cfg.batch_size,
+        )
+    else:
+        # Khong co cot ts -> khong the batch theo thoi gian, giu i.i.d. shuffle.
+        loader = DataLoader(
+            dataset,
+            batch_size=cfg.batch_size,
+            shuffle=True,
+            num_workers=cfg.num_workers,
+            pin_memory=cfg.pin_memory and device.type == "cuda",
+            drop_last=True,
+            persistent_workers=cfg.persistent_workers and cfg.num_workers > 0,
+            prefetch_factor=cfg.prefetch_factor if cfg.num_workers > 0 else None,
+            generator=loader_generator,
+        )
 
     loss_fn = BPATMPLoss(
         behavior_counts=behavior_counts,

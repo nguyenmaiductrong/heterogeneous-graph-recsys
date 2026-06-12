@@ -193,12 +193,17 @@ def sample_aligned_negatives_local(
     user_emb_b: torch.Tensor,
     item_emb_local: torch.Tensor,
     frac_hard: float = 0.5,
+    hard_pool: int = 200,
     generator: torch.Generator | None = None,
 ) -> torch.Tensor:
     """Uniform + hard negatives, voi global history masking.
 
     Bo popularity sampling (contribution nho, them complexity).
     Distribution: uniform (1-frac_hard) | in-batch hard (frac_hard).
+    Hard negative SAMPLE ngau nhien tu pool top-`hard_pool` thay vi lay top-k
+    tuyet doi: dinh ranking day dac cac item user SE tuong tac (future positive
+    cua val khong the mask bang history) — BPR de chung xuong la pha truc tiep
+    NDCG, gay hien tuong val dat dinh som roi tut dan.
     """
     device = pp_b.device
     B = pp_b.size(0)
@@ -214,13 +219,12 @@ def sample_aligned_negatives_local(
         with torch.no_grad():
             scores = user_emb_b @ item_emb_local.T
             scores.scatter_(1, pp_b.unsqueeze(1), float("-inf"))
-            k = min(n_hard, N_items - 1)
-            _, hard_negs = scores.topk(k, dim=-1)
-            if k < n_hard:
-                pad = torch.randint(
-                    0, N_items, (B, n_hard - k), device=device, generator=generator
-                )
-                hard_negs = torch.cat([hard_negs, pad], dim=-1)
+            pool_size = min(max(hard_pool, n_hard), N_items - 1)
+            _, pool = scores.topk(pool_size, dim=-1)
+            choice = torch.randint(
+                0, pool_size, (B, n_hard), device=device, generator=generator
+            )
+            hard_negs = pool.gather(1, choice)
     else:
         hard_negs = torch.empty((B, 0), dtype=torch.long, device=device)
 

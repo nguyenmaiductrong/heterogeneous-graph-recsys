@@ -34,7 +34,9 @@ low_history:
   p_id: 0.15        # xac suat thay self-embedding seed bang slot residual
   p_hist: 0.30      # xac suat xoa behavior edge cua seed user (mo phong thieu lich su)
   lambda_cold: 0.1  # 0 = tat distillation. Bat dau dropout-only roi tang dan.
-  cold_every_k: 2   # chay forward phu moi K step (tiet kiem chi phi)
+  cold_every_k: 4   # chay forward phu moi K step. Tang 2->4 bu chi phi forward
+                    # chinh tang khi temporal batching giu lai behavior edge
+                    # (truoc day ref_time=min batch i.i.d. drop ~het edge).
 
 training:
   amp: true
