@@ -66,8 +66,21 @@ class CheckpointManager:
             config=config or {},
             settings=wandb.Settings(init_timeout=300),
         )
+        self.project = self.run.project or self.project
+        self.entity = self.run.entity or self.entity
+        if not self.entity:
+            raise RuntimeError(
+                "W&B entity is empty after wandb.init(). Set wandb.entity in config "
+                "or export WANDB_ENTITY before training."
+            )
         self._save_run_id(self.run.id)
-        logger.info("W&B run ready: id=%s", self.run.id)
+        logger.info(
+            "W&B run ready: entity=%s project=%s name=%s id=%s",
+            self.entity,
+            self.project,
+            self.run.name,
+            self.run.id,
+        )
         return self.run
 
     def load_checkpoint(

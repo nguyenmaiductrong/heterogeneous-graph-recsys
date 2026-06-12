@@ -887,7 +887,12 @@ def train(
                 "cl_weight": cfg.cl_weight,
             }
         )
-        logger.info("W&B enabled — project=%s run=%s", cfg.wandb_project, wandb_run.id)
+        logger.info(
+            "W&B enabled — entity=%s project=%s run=%s",
+            cfg.wandb_entity,
+            cfg.wandb_project,
+            wandb_run.id,
+        )
 
     start_epoch = 0
     if wandb_manager is not None:
