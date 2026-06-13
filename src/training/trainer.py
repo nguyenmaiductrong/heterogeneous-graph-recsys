@@ -29,18 +29,25 @@ def _make_cold_subgraph(
     subgraph,
     p_hist: float,
     generator: torch.Generator | None,
+    drop_user: torch.Tensor | None = None,
 ):
     """Tao ban sao subgraph mo phong cold: xoa toan bo behavior edge cua mot tap
     seed user ngau nhien (p_hist) -> ho thanh few/zero-shot. CHI xoa edge, GIU NGUYEN
     node .x nen searchsorted/CSR/align voi forward warm khong lech (R2). Lam ngoai
     grad-checkpoint nen khong dinh hazard recompute (R3). Structural edge giu nguyen.
+
+    drop_user: bool [n_user] — tap user bi xoa edge do caller chon san (de dong bo
+    voi cold_mask cold-slot, mo phong TRUE-cold). None = tu sample theo p_hist.
     """
     sub = subgraph.clone()
     device = sub["user"].x.device
     n_user = sub["user"].x.size(0)
-    if p_hist <= 0 or n_user == 0:
+    if n_user == 0:
         return sub
-    drop_user = torch.rand(n_user, device=device, generator=generator) < p_hist
+    if drop_user is None:
+        if p_hist <= 0:
+            return sub
+        drop_user = torch.rand(n_user, device=device, generator=generator) < p_hist
     if not drop_user.any():
         return sub
     drop_idx = drop_user.nonzero(as_tuple=True)[0]
@@ -585,16 +592,32 @@ def train_epoch(
             warm_user_t = user_emb.detach()
             warm_item_t = item_emb.detach()
             del user_emb, item_emb, beh_embs
-            cold_mask = None
+            n_sub_user = subgraph["user"].x.size(0)
+            # Mo phong TRUE-cold: CUNG mot tap user (xac suat p_hist) vua mat het
+            # behavior edge vua bi thay self-embedding bang cold slot — khop dung
+            # dieu kien eval cua cold user that (0 canh + cold slot). Neu p_id va
+            # p_hist sample doc lap thi chi ~p_id*p_hist user thuc su cold: BPR bi
+            # user gan-warm chi phoi, cold_bpr_loss giam nhung cold val khong len.
+            sim_cold_u = (
+                torch.rand(n_sub_user, device=device, generator=generator) < cold_p_hist
+            )
+            cm_u = sim_cold_u.clone()
+            cold_mask = {"user": cm_u}
             if cold_p_id > 0:
-                cm_u = torch.rand(
-                    subgraph["user"].x.size(0), device=device, generator=generator
-                ) < cold_p_id
-                cm_p = torch.rand(
-                    subgraph["product"].x.size(0), device=device, generator=generator
-                ) < cold_p_id
-                cold_mask = {"user": cm_u, "product": cm_p}
-            sub_cold = _make_cold_subgraph(subgraph, cold_p_hist, generator)
+                # ID-dropout doc lap bo sung (robustness nhe cho user/item warm).
+                cm_u |= (
+                    torch.rand(n_sub_user, device=device, generator=generator)
+                    < cold_p_id
+                )
+                cold_mask["product"] = (
+                    torch.rand(
+                        subgraph["product"].x.size(0), device=device, generator=generator
+                    )
+                    < cold_p_id
+                )
+            sub_cold = _make_cold_subgraph(
+                subgraph, cold_p_hist, generator, drop_user=sim_cold_u
+            )
             l_cold_bpr = None
             with torch.amp.autocast(
                 "cuda", dtype=_amp_dtype, enabled=amp and device.type == "cuda"
@@ -603,7 +626,8 @@ def train_epoch(
                 l_cold = cold_consistency_loss(ue_cold, warm_user_t) + cold_consistency_loss(
                     ie_cold, warm_item_t
                 )
-                # BPR truc tiep tren forward cold (DropoutNet-style). Distillation
+                # BPR truc tiep tren forward cold (DropoutNet-style), CHI tren
+                # triplet purchase cua user dang true-cold-simulated. Distillation
                 # cosine chi keo cold emb ve phia warm emb — KHONG toi uu ranking:
                 # khi item embedding drift theo personalization, huong cold-slot
                 # thanh stale va cold metric sap dan theo epoch (cold user that
@@ -612,7 +636,7 @@ def train_epoch(
                 # ep cold pathway rank purchase that len tren va tu bam theo item
                 # drift. Item side detach -> chi train duong user/cold-slot.
                 if cold_bpr_lambda > 0:
-                    mask_p = bev == purchase_id
+                    mask_p = (bev == purchase_id) & sim_cold_u[u_loc]
                     if mask_p.any() and N_items > 1:
                         u_c = ue_cold[u_loc[mask_p]]
                         pp_c = pp_loc[mask_p]

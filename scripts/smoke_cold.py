@@ -250,20 +250,21 @@ def test_train() -> None:
     assert out0["train/cold_bpr_loss"] == 0.0, out0
     print("[C4] lambda_cold=0 -> khong chay cold (train nhu cu) OK")
 
-    # C5: cold_bpr_lambda > 0 -> BPR tren forward cold chay, loss huu han > 0,
-    # va gradient toi cold slot user (duong hoc ranking cold)
+    # C5: cold_bpr_lambda > 0 -> BPR tren forward cold chay, loss huu han > 0.
+    # BPR chi tinh tren user true-cold-simulated (sim_cold_u, xac suat p_hist)
+    # nen dung p_hist cao de chac chan co purchase triplet cua user cold trong batch.
     model.zero_grad(set_to_none=True)
     out_bpr = train_epoch(
         model, sampler, loader, opt, loss_fn, scaler, device,
         num_neg=2, amp=False, use_bf16=False, cl_every_k=1,
         history_ptr=hist_ptr, history_item=hist_item,
-        cold_p_id=0.5, cold_p_hist=0.5, cold_lambda=0.05, cold_bpr_lambda=0.5,
+        cold_p_id=0.5, cold_p_hist=0.8, cold_lambda=0.05, cold_bpr_lambda=0.5,
         cold_every_k=1,
     )
     assert all(torch.isfinite(torch.tensor(v)) for v in out_bpr.values()), out_bpr
     assert out_bpr["train/cold_bpr_loss"] > 0.0, out_bpr
     print(
-        f"[C5] cold BPR OK — cold_loss={out_bpr['train/cold_loss']:.4f} "
+        f"[C5] cold BPR (true-cold only) OK — cold_loss={out_bpr['train/cold_loss']:.4f} "
         f"cold_bpr_loss={out_bpr['train/cold_bpr_loss']:.4f}"
     )
 
@@ -272,7 +273,7 @@ def test_train() -> None:
         model, sampler, loader, opt, loss_fn, scaler, device,
         num_neg=2, amp=False, use_bf16=False, cl_every_k=1,
         history_ptr=hist_ptr, history_item=hist_item,
-        cold_p_id=0.5, cold_p_hist=0.5, cold_lambda=0.0, cold_bpr_lambda=0.5,
+        cold_p_id=0.5, cold_p_hist=0.8, cold_lambda=0.0, cold_bpr_lambda=0.5,
         cold_every_k=1,
     )
     assert out_bpr_only["train/cold_bpr_loss"] > 0.0, out_bpr_only
