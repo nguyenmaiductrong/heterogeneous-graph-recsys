@@ -48,12 +48,12 @@ training:
   max_grad_norm: 1.0
   cl_every_k: 2
   max_view_triplets: -1
-  num_neg: 64
+  num_neg: 96
   neg_frac_hard: 0.4
   neg_hard_pool: 500
   neg_skip_top: 20
   num_workers: 8
-  patience: 8
+  patience: 40
   save_dir: checkpoints-recsys-v9
   weight_decay: 0.01
   pin_memory: true
