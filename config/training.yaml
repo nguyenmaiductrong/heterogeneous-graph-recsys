@@ -35,16 +35,19 @@ loss:
 low_history:
   p_id: 0.15        # xac suat thay self-embedding seed bang slot residual
   p_hist: 0.20      # xac suat xoa behavior edge cua seed user (mo phong thieu lich su)
-  lambda_cold: 0.05 # 0 = tat distillation. Bat dau dropout-only roi tang dan.
+  lambda_cold: 0.10 # 0 = tat distillation. 0.05->0.10: neo cold ve warm chac hon,
+                    # giam lang thang cua cold-slot.
   # BPR truc tiep tren forward cold: cold user that = 0 canh train -> ca segment
   # dung chung MOT embedding (cold slot), metric cold = chat luong mot ranking
   # toan cuc. Distillation cosine khong toi uu ranking do nen khi item embedding
   # drift theo personalization, cold sap dan theo epoch (quan sat run v2).
   # lambda_bpr ep cold pathway rank purchase that len tren, bam theo item drift.
-  lambda_bpr: 0.5
-  cold_every_k: 4   # chay forward phu moi K step. Tang 2->4 bu chi phi forward
-                    # chinh tang khi temporal batching giu lai behavior edge
-                    # (truoc day ref_time=min batch i.i.d. drop ~het edge).
+  lambda_bpr: 0.25  # 0.5->0.25: giam bien do yank cold-slot moi step (bot dao dong).
+  cold_every_k: 2   # 4->2: cap nhat day hon, buoc nho hon -> trung binh hoa huong
+                    # popularity tot hon (giam variance). Tang ~1 forward phu/2 step.
+  # EMA cold-slot dung CHI luc eval: cold user that 0 canh dung chung 1 vector;
+  # EMA lam vector eval doi cham => cold metric het dao dong 0<->0.016.
+  slot_ema_decay: 0.9
 
 training:
   amp: true
@@ -68,11 +71,11 @@ training:
   max_grad_norm: 1.0
   cl_every_k: 2
   max_view_triplets: -1
-  num_neg: 32
+  num_neg: 48      # 32->48: nhieu negative hon -> ranking top-K sac hon (nang peak warm NDCG)
   # Hard negative: giam ty le hard (false-negative phi xa hon), pool rong hon,
   # va BO top-20 rank khoi pool — vung top chinh la noi future positive don vao
   # khi model kha len (khong the mask), BPR de chung xuong la pha truc tiep NDCG@10/20.
-  neg_frac_hard: 0.3
+  neg_frac_hard: 0.4   # 0.3->0.4: nhieu hard-neg hon (skip_top=20 van chan false-neg) -> sac top-K
   neg_hard_pool: 500
   neg_skip_top: 20
   num_workers: 8

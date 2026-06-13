@@ -556,6 +556,19 @@ class BPATMPModel(nn.Module):
         for emb in self.input_proj.values():
             nn.init.xavier_uniform_(emb.weight)
 
+        # EMA cua cold-slot dung CHI luc eval. Cold user/item that co 0 canh ->
+        # tat ca dung chung dung mot vector cold-slot -> cold metric = chat luong
+        # MOT ranking toan cuc duy nhat. Vector cold-slot tuc thoi bi BPR cold
+        # (batch ngau nhien) keo lang thang moi step -> ranking xao lai moi epoch
+        # -> cold dao dong 0<->0.016. EMA lam vector eval doi cham => het dao dong.
+        # decay=0 (mac dinh) = tat, eval dung weight tuc thoi nhu cu.
+        self.cold_slot_ema_decay: float = 0.0
+        for ntype, idx in self.cold_slot_idx.items():
+            self.register_buffer(
+                f"_cold_slot_ema_{ntype}",
+                self.input_proj[ntype].weight.detach()[idx].clone(),
+            )
+
         self.beh_proj = nn.ModuleDict({
             beh: nn.Linear(embed_dim, embed_dim, bias=False)
             for beh in ("view", "cart", "purchase")
@@ -575,6 +588,17 @@ class BPATMPModel(nn.Module):
 
         self.intent_codebook = IntentCodebook(n_intents=n_intents, dim=embed_dim)
 
+    @torch.no_grad()
+    def update_cold_slot_ema(self) -> None:
+        """Cap nhat EMA cold-slot sau moi optimizer step. No-op khi decay<=0."""
+        d = self.cold_slot_ema_decay
+        if d <= 0.0:
+            return
+        for ntype, idx in self.cold_slot_idx.items():
+            buf = getattr(self, f"_cold_slot_ema_{ntype}")
+            cur = self.input_proj[ntype].weight.detach()[idx]
+            buf.mul_(d).add_(cur.to(buf.dtype), alpha=1.0 - d)
+
     def embedding_l2_norm(self) -> Tensor:
         total = torch.tensor(0.0, device=next(self.parameters()).device)
         for emb in self.input_proj.values():
@@ -587,6 +611,7 @@ class BPATMPModel(nn.Module):
         return_beh_embs: bool = False,
         ref_time: Optional[float] = None,
         cold_mask: Optional[Dict[str, Tensor]] = None,
+        use_cold_ema: bool = False,
     ) -> Tuple[Tensor, Tensor, Optional[Dict[str, Tensor]]]:
         """
         cold_mask: optional {node_type: bool [N_ntype]} theo dung thu tu node trong
@@ -602,7 +627,10 @@ class BPATMPModel(nn.Module):
                 if cold_mask is not None and ntype in self.cold_slot_idx:
                     m = cold_mask.get(ntype)
                     if m is not None and m.any():
-                        cold_vec = emb.weight[self.cold_slot_idx[ntype]]
+                        if use_cold_ema and self.cold_slot_ema_decay > 0.0:
+                            cold_vec = getattr(self, f"_cold_slot_ema_{ntype}")
+                        else:
+                            cold_vec = emb.weight[self.cold_slot_idx[ntype]]
                         x = torch.where(
                             m.to(x.device).unsqueeze(-1),
                             cold_vec.to(x.dtype).expand_as(x),

@@ -140,6 +140,7 @@ class TrainConfig:
     cold_lambda: float = 0.0      # trong so distillation L_cold (0 = tat, train nhu cu)
     cold_bpr_lambda: float = 0.0  # trong so BPR tren forward cold (toi uu truc tiep ranking cold)
     cold_every_k: int = 2         # chay forward cold moi K step
+    cold_slot_ema_decay: float = 0.0  # EMA cold-slot luc eval (0=tat). ~0.9 lam cold het dao dong
 
     # Evaluation
     eval_subsample: int = 10000
@@ -222,6 +223,9 @@ class TrainConfig:
             cold_lambda=float(cold.get("lambda_cold", cls.cold_lambda)),
             cold_bpr_lambda=float(cold.get("lambda_bpr", cls.cold_bpr_lambda)),
             cold_every_k=int(cold.get("cold_every_k", cls.cold_every_k)),
+            cold_slot_ema_decay=float(
+                cold.get("slot_ema_decay", cls.cold_slot_ema_decay)
+            ),
 
             # Evaluation
             eval_subsample=t.get("eval_subsample", cls.eval_subsample),
@@ -679,6 +683,10 @@ def train_epoch(
         if scheduler is not None:
             scheduler.step()
 
+        # EMA cold-slot cho eval (no-op khi decay<=0). Sau optimizer.step de bat
+        # gia tri cold-slot vua cap nhat.
+        model.update_cold_slot_ema()
+
         total_loss += log["loss/total"]
         total_cl_loss += float(log.get("loss/cl", 0.0))
         n_steps += 1
@@ -737,7 +745,9 @@ def export_embeddings(
             node_ids = sub["product"].x.cpu()
             cold_mask = {"product": item_is_cold.to("cpu")[node_ids].to(device).bool()}
         with torch.amp.autocast("cuda", dtype=_amp_dtype, enabled=device.type == "cuda"):
-            _, item_local = model(sub, ref_time=ref_time, cold_mask=cold_mask)
+            _, item_local = model(
+                sub, ref_time=ref_time, cold_mask=cold_mask, use_cold_ema=True
+            )
         item_emb[start:end] = item_local.float().cpu()
 
     user_emb = torch.zeros(len(user_ids), d)
@@ -754,7 +764,9 @@ def export_embeddings(
             node_ids = sub["user"].x.cpu()
             cold_mask = {"user": user_is_cold.to("cpu")[node_ids].to(device).bool()}
         with torch.amp.autocast("cuda", dtype=_amp_dtype, enabled=device.type == "cuda"):
-            u_local, _ = model(sub, ref_time=ref_time, cold_mask=cold_mask)
+            u_local, _ = model(
+                sub, ref_time=ref_time, cold_mask=cold_mask, use_cold_ema=True
+            )
         user_emb[start:end] = u_local.float().cpu()
 
     return user_emb, item_emb
@@ -892,6 +904,8 @@ def train(
     _setup_a100_optimizations(cfg, device)
 
     model.to(device)
+    # Bat EMA cold-slot cho eval (set truoc compile de wrapper forward attribute).
+    model.cold_slot_ema_decay = cfg.cold_slot_ema_decay
 
     # Compile model with torch.compile (PyTorch 2.0+)
     if cfg.compile_model and hasattr(torch, "compile"):
@@ -1136,6 +1150,8 @@ def train(
             postfix[pm.replace("@", "_")] = f"{primary_val:.4f}"
 
             improved: list[str] = []
+            improved_for_stop = False  # cold la ranking toan cuc don le (noisy) ->
+            # KHONG dung no de reset early-stop, tranh keo dai run theo spike cold.
             for tag, key in best_tracks.items():
                 val = metrics.get(key)
                 if val is None or val <= best_vals[tag]:
@@ -1143,6 +1159,8 @@ def train(
                 best_vals[tag] = val
                 best_epochs[tag] = epoch
                 improved.append(f"{key}={val:.4f}")
+                if tag != "best_cold":
+                    improved_for_stop = True
                 state = {
                     "epoch": epoch,
                     "model_state_dict": model.state_dict(),
@@ -1157,8 +1175,9 @@ def train(
                 torch.save(state, save_dir / f"{tag}.pt")
 
             if improved:
-                no_improve = 0
                 row += "  <- best: " + ", ".join(improved)
+            if improved_for_stop:
+                no_improve = 0
             else:
                 no_improve += 1
             postfix["best_primary"] = f"{best_vals['best']:.4f}"
