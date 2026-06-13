@@ -178,7 +178,7 @@ def test_train() -> None:
     import torch
     from torch.utils.data import DataLoader
     from src.graph.neighbor_sampler import BehaviorAwareNeighborSampler, NeighborSamplerConfig
-    from src.training.losses import BPATMPLoss, build_user_history_csr
+    from src.training.losses import BPATMPTotalLoss, build_user_history_csr
     from src.training.trainer import (
         InteractionDataset, train_epoch, _make_cold_subgraph,
     )
@@ -223,7 +223,10 @@ def test_train() -> None:
     sampler = BehaviorAwareNeighborSampler(
         data=g, config=NeighborSamplerConfig(hop1_budget=8, hop2_budget=4), device=device,
     )
-    loss_fn = BPATMPLoss(behavior_counts={"view": 60, "cart": 20, "purchase": 20}, lambda_cl=0.1)
+    loss_fn = BPATMPTotalLoss(
+        behavior_counts={"view": 60, "cart": 20, "purchase": 20},
+        lambda_cl=0.1, lambda_conv=0.1, lambda_mono=0.05, cl_hard_k=8,
+    )
     hist_ptr, hist_item = build_user_history_csr(triplets, n_users=N_USER)
     opt = torch.optim.AdamW(model.parameters(), lr=1e-3)
     scaler = torch.amp.GradScaler("cuda", enabled=False)

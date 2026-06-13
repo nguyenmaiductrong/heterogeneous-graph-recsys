@@ -18,16 +18,23 @@ sampler:
   hop2_budget: 1
   hop1_sample_replace: true
 loss:
-  lambda_cl: 0.1
+  lambda_cl: 0.15
+  lambda_conv: 0.1
+  lambda_mono: 0.05
+  funnel_margin: 0.1
   tau: 0.1
   alpha: 0.5
   w_min: 0.05
+hierarchy_cl:
+  tau: 0.1
+  hard_k: 64
+  min_pair_overlap: 4
 low_history:
-  p_id: 0.05
-  p_hist: 0.1
-  lambda_cold: 0.04
-  lambda_bpr: 0.1
-  cold_every_k: 4
+  p_id: 0.15
+  p_hist: 0.2
+  lambda_cold: 0.1
+  lambda_bpr: 0.25
+  cold_every_k: 2
   slot_ema_decay: 0.99
 training:
   amp: true
@@ -54,7 +61,7 @@ training:
   neg_skip_top: 20
   num_workers: 8
   patience: 8
-  save_dir: checkpoints-recsys-v6
+  save_dir: checkpoints-recsys-v7
   weight_decay: 0.01
   pin_memory: true
   persistent_workers: true
@@ -82,11 +89,11 @@ evaluation:
   - NDCG@20
   - NDCG@50
 wandb:
-  artifact_name: recsys-graph-v6
+  artifact_name: recsys-graph-v7
   enabled: true
   entity: nguyenmaiductrong37-h-c-vi-n-c-ng-ngh-b-u-ch-nh-vi-n-th-ng
   project: recsys-graph
-  run_name: recsys-graph-v6
+  run_name: recsys-graph-v7
   save_every: 1
 a100:
   allow_tf32: true
