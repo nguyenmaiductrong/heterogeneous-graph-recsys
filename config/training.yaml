@@ -75,8 +75,8 @@ training:
   neg_hard_pool: 500
   neg_skip_top: 20
   num_workers: 8
-  patience: 8
-  save_dir: checkpoints-recsys-v1
+  patience: 5
+  save_dir: checkpoints-recsys-v2
   weight_decay: 1.0e-02
   pin_memory: true
   persistent_workers: true
@@ -91,11 +91,11 @@ evaluation:
   metrics: ["HR@1", "HR@5", "HR@10", "HR@20", "HR@50", "NDCG@1", "NDCG@5", "NDCG@10", "NDCG@20", "NDCG@50"]
 
 wandb:
-  artifact_name: recsys-graph-v3
+  artifact_name: recsys-graph-v4
   enabled: true
   entity: nguyenmaiductrong37-h-c-vi-n-c-ng-ngh-b-u-ch-nh-vi-n-th-ng
   project: recsys-graph
-  run_name: recsys-graph-v3
+  run_name: recsys-graph-v4
   save_every: 1
 
 a100:

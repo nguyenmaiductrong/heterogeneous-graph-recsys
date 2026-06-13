@@ -103,3 +103,5 @@ anomaly_report.json
 validation_report.json
 data
 /temp_mixrec
+unfiltered_backup/test_ground_truth.pkl
+unfiltered_backup/val_ground_truth.pkl
