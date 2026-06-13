@@ -48,13 +48,13 @@ training:
   max_grad_norm: 1.0
   cl_every_k: 2
   max_view_triplets: -1
-  num_neg: 32
-  neg_frac_hard: 0.3
+  num_neg: 64
+  neg_frac_hard: 0.4
   neg_hard_pool: 500
   neg_skip_top: 20
   num_workers: 8
   patience: 8
-  save_dir: checkpoints-recsys-v8
+  save_dir: checkpoints-recsys-v9
   weight_decay: 0.01
   pin_memory: true
   persistent_workers: true
@@ -82,11 +82,11 @@ evaluation:
   - NDCG@20
   - NDCG@50
 wandb:
-  artifact_name: recsys-graph-v8
+  artifact_name: recsys-graph-v9
   enabled: true
   entity: nguyenmaiductrong37-h-c-vi-n-c-ng-ngh-b-u-ch-nh-vi-n-th-ng
   project: recsys-graph
-  run_name: recsys-graph-v8
+  run_name: recsys-graph-v9
   save_every: 1
 a100:
   allow_tf32: true
