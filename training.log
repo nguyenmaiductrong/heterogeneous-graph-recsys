@@ -1,0 +1,356 @@
+recsys-graph-v3
+2026-06-13 10:01:54
+2026-06-13 03:01:54,649 - src.training.trainer - INFO - W&B enabled — entity=nguyenmaiductrong37-h-c-vi-n-c-ng-ngh-b-u-ch-nh-vi-n-th-ng project=recsys-graph run=8p48th43
+2026-06-13 10:08:20
+2026-06-13 03:08:19,999 - src.training.trainer - INFO - Epoch 000 | train/loss=2.1355 | train/cl_loss=2.2053 | train/cold_loss=0.6405 | train/cold_bpr_loss=0.5895 | train/skipped_batches=0.0000 | train/lr=0.0001  <- best: NDCG@10=0.0089, warm_user/NDCG@10=0.0102, cold_user/NDCG@10=0.0033
+2026-06-13 10:08:20
+2026-06-13 03:08:19,999 - src.training.trainer - INFO - Epoch 000 | val | HR@1=0.0034 | NDCG@1=0.0034 | HR@5=0.0161 | NDCG@5=0.0063 | HR@10=0.0298 | NDCG@10=0.0089 | HR@20=0.0470 | NDCG@20=0.0117 | HR@50=0.0901 | NDCG@50=0.0176
+2026-06-13 10:08:20
+2026-06-13 03:08:20,000 - src.training.trainer - INFO - Epoch 000 | val | cold_user (n=3022) | HR@1=0.0033 | NDCG@1=0.0033 | HR@5=0.0046 | NDCG@5=0.0028 | HR@10=0.0073 | NDCG@10=0.0033 | HR@20=0.0116 | NDCG@20=0.0041 | HR@50=0.0195 | NDCG@50=0.0053
+2026-06-13 10:08:20
+2026-06-13 03:08:20,000 - src.training.trainer - INFO - Epoch 000 | val | warm_user (n=12370) | HR@1=0.0035 | NDCG@1=0.0035 | HR@5=0.0189 | NDCG@5=0.0071 | HR@10=0.0353 | NDCG@10=0.0102 | HR@20=0.0556 | NDCG@20=0.0136 | HR@50=0.1074 | NDCG@50=0.0207
+2026-06-13 10:15:03
+2026-06-13 03:15:03,633 - src.training.trainer - INFO - Epoch 001 | train/loss=1.1899 | train/cl_loss=0.9340 | train/cold_loss=0.4749 | train/cold_bpr_loss=0.4628 | train/skipped_batches=0.0000 | train/lr=0.0003  <- best: NDCG@10=0.0194, warm_user/NDCG@10=0.0240
+2026-06-13 10:15:03
+2026-06-13 03:15:03,633 - src.training.trainer - INFO - Epoch 001 | val | HR@1=0.0088 | NDCG@1=0.0088 | HR@5=0.0373 | NDCG@5=0.0146 | HR@10=0.0611 | NDCG@10=0.0194 | HR@20=0.0977 | NDCG@20=0.0259 | HR@50=0.1548 | NDCG@50=0.0349
+2026-06-13 10:15:03
+2026-06-13 03:15:03,633 - src.training.trainer - INFO - Epoch 001 | val | cold_user (n=3022) | HR@1=0.0003 | NDCG@1=0.0003 | HR@5=0.0003 | NDCG@5=0.0003 | HR@10=0.0013 | NDCG@10=0.0006 | HR@20=0.0043 | NDCG@20=0.0012 | HR@50=0.0175 | NDCG@50=0.0031
+2026-06-13 10:15:03
+2026-06-13 03:15:03,634 - src.training.trainer - INFO - Epoch 001 | val | warm_user (n=12370) | HR@1=0.0108 | NDCG@1=0.0108 | HR@5=0.0463 | NDCG@5=0.0181 | HR@10=0.0757 | NDCG@10=0.0240 | HR@20=0.1205 | NDCG@20=0.0320 | HR@50=0.1884 | NDCG@50=0.0427
+2026-06-13 10:21:46
+2026-06-13 03:21:46,896 - src.training.trainer - INFO - Epoch 002 | train/loss=0.9802 | train/cl_loss=0.8027 | train/cold_loss=0.3809 | train/cold_bpr_loss=0.4241 | train/skipped_batches=0.0000 | train/lr=0.0003  <- best: NDCG@10=0.0234, warm_user/NDCG@10=0.0275, cold_user/NDCG@10=0.0067
+2026-06-13 10:21:46
+2026-06-13 03:21:46,896 - src.training.trainer - INFO - Epoch 002 | val | HR@1=0.0110 | NDCG@1=0.0110 | HR@5=0.0446 | NDCG@5=0.0184 | HR@10=0.0702 | NDCG@10=0.0234 | HR@20=0.1026 | NDCG@20=0.0291 | HR@50=0.1607 | NDCG@50=0.0380
+2026-06-13 10:21:46
+2026-06-13 03:21:46,896 - src.training.trainer - INFO - Epoch 002 | val | cold_user (n=3022) | HR@1=0.0050 | NDCG@1=0.0050 | HR@5=0.0106 | NDCG@5=0.0056 | HR@10=0.0159 | NDCG@10=0.0067 | HR@20=0.0271 | NDCG@20=0.0086 | HR@50=0.0500 | NDCG@50=0.0122
+2026-06-13 10:21:46
+2026-06-13 03:21:46,897 - src.training.trainer - INFO - Epoch 002 | val | warm_user (n=12370) | HR@1=0.0125 | NDCG@1=0.0125 | HR@5=0.0530 | NDCG@5=0.0215 | HR@10=0.0835 | NDCG@10=0.0275 | HR@20=0.1210 | NDCG@20=0.0342 | HR@50=0.1878 | NDCG@50=0.0444
+2026-06-13 10:28:27
+2026-06-13 03:28:27,281 - src.training.trainer - INFO - Epoch 003 | train/loss=0.7919 | train/cl_loss=0.7577 | train/cold_loss=0.3251 | train/cold_bpr_loss=0.4018 | train/skipped_batches=0.0000 | train/lr=0.0003
+2026-06-13 10:28:27
+2026-06-13 03:28:27,282 - src.training.trainer - INFO - Epoch 003 | val | HR@1=0.0109 | NDCG@1=0.0109 | HR@5=0.0411 | NDCG@5=0.0170 | HR@10=0.0656 | NDCG@10=0.0219 | HR@20=0.0977 | NDCG@20=0.0274 | HR@50=0.1492 | NDCG@50=0.0352
+2026-06-13 10:28:27
+2026-06-13 03:28:27,282 - src.training.trainer - INFO - Epoch 003 | val | cold_user (n=3022) | HR@1=0.0000 | NDCG@1=0.0000 | HR@5=0.0007 | NDCG@5=0.0001 | HR@10=0.0007 | NDCG@10=0.0001 | HR@20=0.0099 | NDCG@20=0.0018 | HR@50=0.0354 | NDCG@50=0.0053
+2026-06-13 10:28:27
+2026-06-13 03:28:27,282 - src.training.trainer - INFO - Epoch 003 | val | warm_user (n=12370) | HR@1=0.0136 | NDCG@1=0.0136 | HR@5=0.0510 | NDCG@5=0.0212 | HR@10=0.0814 | NDCG@10=0.0272 | HR@20=0.1192 | NDCG@20=0.0337 | HR@50=0.1770 | NDCG@50=0.0425
+2026-06-13 10:35:08
+2026-06-13 03:35:08,851 - src.training.trainer - INFO - Epoch 004 | train/loss=0.6627 | train/cl_loss=0.7612 | train/cold_loss=0.3085 | train/cold_bpr_loss=0.3979 | train/skipped_batches=0.0000 | train/lr=0.0003  <- best: NDCG@10=0.0260, warm_user/NDCG@10=0.0298, cold_user/NDCG@10=0.0106
+2026-06-13 10:35:08
+2026-06-13 03:35:08,851 - src.training.trainer - INFO - Epoch 004 | val | HR@1=0.0144 | NDCG@1=0.0144 | HR@5=0.0513 | NDCG@5=0.0216 | HR@10=0.0745 | NDCG@10=0.0260 | HR@20=0.1016 | NDCG@20=0.0306 | HR@50=0.1537 | NDCG@50=0.0384
+2026-06-13 10:35:08
+2026-06-13 03:35:08,852 - src.training.trainer - INFO - Epoch 004 | val | cold_user (n=3022) | HR@1=0.0007 | NDCG@1=0.0007 | HR@5=0.0288 | NDCG@5=0.0102 | HR@10=0.0304 | NDCG@10=0.0106 | HR@20=0.0321 | NDCG@20=0.0109 | HR@50=0.0629 | NDCG@50=0.0157
+2026-06-13 10:35:08
+2026-06-13 03:35:08,852 - src.training.trainer - INFO - Epoch 004 | val | warm_user (n=12370) | HR@1=0.0178 | NDCG@1=0.0178 | HR@5=0.0568 | NDCG@5=0.0243 | HR@10=0.0853 | NDCG@10=0.0298 | HR@20=0.1186 | NDCG@20=0.0354 | HR@50=0.1759 | NDCG@50=0.0439
+2026-06-13 10:41:50
+2026-06-13 03:41:50,436 - src.training.trainer - INFO - Epoch 005 | train/loss=0.5750 | train/cl_loss=0.7262 | train/cold_loss=0.3025 | train/cold_bpr_loss=0.3967 | train/skipped_batches=0.0000 | train/lr=0.0003  <- best: NDCG@10=0.0266, warm_user/NDCG@10=0.0330
+2026-06-13 10:41:50
+2026-06-13 03:41:50,437 - src.training.trainer - INFO - Epoch 005 | val | HR@1=0.0172 | NDCG@1=0.0172 | HR@5=0.0511 | NDCG@5=0.0220 | HR@10=0.0736 | NDCG@10=0.0266 | HR@20=0.0993 | NDCG@20=0.0312 | HR@50=0.1422 | NDCG@50=0.0373
+2026-06-13 10:41:50
+2026-06-13 03:41:50,437 - src.training.trainer - INFO - Epoch 005 | val | cold_user (n=3022) | HR@1=0.0000 | NDCG@1=0.0000 | HR@5=0.0010 | NDCG@5=0.0003 | HR@10=0.0010 | NDCG@10=0.0003 | HR@20=0.0046 | NDCG@20=0.0010 | HR@50=0.0225 | NDCG@50=0.0033
+2026-06-13 10:41:50
+2026-06-13 03:41:50,437 - src.training.trainer - INFO - Epoch 005 | val | warm_user (n=12370) | HR@1=0.0214 | NDCG@1=0.0214 | HR@5=0.0634 | NDCG@5=0.0273 | HR@10=0.0914 | NDCG@10=0.0330 | HR@20=0.1225 | NDCG@20=0.0386 | HR@50=0.1714 | NDCG@50=0.0457
+2026-06-13 10:48:32
+2026-06-13 03:48:32,546 - src.training.trainer - INFO - Epoch 006 | train/loss=0.5212 | train/cl_loss=0.7392 | train/cold_loss=0.3002 | train/cold_bpr_loss=0.3871 | train/skipped_batches=0.0000 | train/lr=0.0003  <- best: NDCG@10=0.0272, warm_user/NDCG@10=0.0339
+2026-06-13 10:48:32
+2026-06-13 03:48:32,546 - src.training.trainer - INFO - Epoch 006 | val | HR@1=0.0179 | NDCG@1=0.0179 | HR@5=0.0509 | NDCG@5=0.0228 | HR@10=0.0737 | NDCG@10=0.0272 | HR@20=0.0991 | NDCG@20=0.0316 | HR@50=0.1446 | NDCG@50=0.0383
+2026-06-13 10:48:32
+2026-06-13 03:48:32,546 - src.training.trainer - INFO - Epoch 006 | val | cold_user (n=3022) | HR@1=0.0000 | NDCG@1=0.0000 | HR@5=0.0000 | NDCG@5=0.0000 | HR@10=0.0000 | NDCG@10=0.0000 | HR@20=0.0007 | NDCG@20=0.0001 | HR@50=0.0152 | NDCG@50=0.0022
+2026-06-13 10:48:32
+2026-06-13 03:48:32,546 - src.training.trainer - INFO - Epoch 006 | val | warm_user (n=12370) | HR@1=0.0222 | NDCG@1=0.0222 | HR@5=0.0633 | NDCG@5=0.0284 | HR@10=0.0918 | NDCG@10=0.0339 | HR@20=0.1231 | NDCG@20=0.0394 | HR@50=0.1762 | NDCG@50=0.0471
+2026-06-13 10:55:15
+2026-06-13 03:55:15,504 - src.training.trainer - INFO - Epoch 007 | train/loss=0.4808 | train/cl_loss=0.7283 | train/cold_loss=0.2998 | train/cold_bpr_loss=0.3867 | train/skipped_batches=0.0000 | train/lr=0.0003  <- best: NDCG@10=0.0279, warm_user/NDCG@10=0.0347
+2026-06-13 10:55:15
+2026-06-13 03:55:15,504 - src.training.trainer - INFO - Epoch 007 | val | HR@1=0.0171 | NDCG@1=0.0171 | HR@5=0.0538 | NDCG@5=0.0233 | HR@10=0.0774 | NDCG@10=0.0279 | HR@20=0.1061 | NDCG@20=0.0330 | HR@50=0.1496 | NDCG@50=0.0395
+2026-06-13 10:55:15
+2026-06-13 03:55:15,505 - src.training.trainer - INFO - Epoch 007 | val | cold_user (n=3022) | HR@1=0.0000 | NDCG@1=0.0000 | HR@5=0.0007 | NDCG@5=0.0002 | HR@10=0.0007 | NDCG@10=0.0002 | HR@20=0.0023 | NDCG@20=0.0005 | HR@50=0.0169 | NDCG@50=0.0022
+2026-06-13 10:55:15
+2026-06-13 03:55:15,505 - src.training.trainer - INFO - Epoch 007 | val | warm_user (n=12370) | HR@1=0.0213 | NDCG@1=0.0213 | HR@5=0.0668 | NDCG@5=0.0290 | HR@10=0.0962 | NDCG@10=0.0347 | HR@20=0.1314 | NDCG@20=0.0409 | HR@50=0.1821 | NDCG@50=0.0486
+2026-06-13 11:01:52
+2026-06-13 04:01:52,799 - src.training.trainer - INFO - Epoch 008 | train/loss=0.4463 | train/cl_loss=0.6687 | train/cold_loss=0.3022 | train/cold_bpr_loss=0.3818 | train/skipped_batches=0.0000 | train/lr=0.0003
+2026-06-13 11:01:52
+2026-06-13 04:01:52,799 - src.training.trainer - INFO - Epoch 008 | val | HR@1=0.0161 | NDCG@1=0.0161 | HR@5=0.0478 | NDCG@5=0.0210 | HR@10=0.0680 | NDCG@10=0.0248 | HR@20=0.0924 | NDCG@20=0.0291 | HR@50=0.1344 | NDCG@50=0.0353
+2026-06-13 11:01:52
+2026-06-13 04:01:52,799 - src.training.trainer - INFO - Epoch 008 | val | cold_user (n=3022) | HR@1=0.0000 | NDCG@1=0.0000 | HR@5=0.0000 | NDCG@5=0.0000 | HR@10=0.0000 | NDCG@10=0.0000 | HR@20=0.0000 | NDCG@20=0.0000 | HR@50=0.0033 | NDCG@50=0.0004
+2026-06-13 11:01:52
+2026-06-13 04:01:52,800 - src.training.trainer - INFO - Epoch 008 | val | warm_user (n=12370) | HR@1=0.0200 | NDCG@1=0.0200 | HR@5=0.0594 | NDCG@5=0.0261 | HR@10=0.0846 | NDCG@10=0.0308 | HR@20=0.1150 | NDCG@20=0.0362 | HR@50=0.1665 | NDCG@50=0.0438
+2026-06-13 11:08:38
+2026-06-13 04:08:38,897 - src.training.trainer - INFO - Epoch 009 | train/loss=0.4275 | train/cl_loss=0.7094 | train/cold_loss=0.2956 | train/cold_bpr_loss=0.3883 | train/skipped_batches=0.0000 | train/lr=0.0003  <- best: NDCG@10=0.0401, warm_user/NDCG@10=0.0459, cold_user/NDCG@10=0.0165
+2026-06-13 11:08:38
+2026-06-13 04:08:38,897 - src.training.trainer - INFO - Epoch 009 | val | HR@1=0.0288 | NDCG@1=0.0288 | HR@5=0.0726 | NDCG@5=0.0334 | HR@10=0.1058 | NDCG@10=0.0401 | HR@20=0.1373 | NDCG@20=0.0458 | HR@50=0.1902 | NDCG@50=0.0540
+2026-06-13 11:08:38
+2026-06-13 04:08:38,898 - src.training.trainer - INFO - Epoch 009 | val | cold_user (n=3022) | HR@1=0.0149 | NDCG@1=0.0149 | HR@5=0.0152 | NDCG@5=0.0107 | HR@10=0.0397 | NDCG@10=0.0165 | HR@20=0.0424 | NDCG@20=0.0172 | HR@50=0.0599 | NDCG@50=0.0197
+2026-06-13 11:08:38
+2026-06-13 04:08:38,898 - src.training.trainer - INFO - Epoch 009 | val | warm_user (n=12370) | HR@1=0.0322 | NDCG@1=0.0322 | HR@5=0.0866 | NDCG@5=0.0389 | HR@10=0.1220 | NDCG@10=0.0459 | HR@20=0.1605 | NDCG@20=0.0528 | HR@50=0.2221 | NDCG@50=0.0624
+2026-06-13 11:15:18
+2026-06-13 04:15:18,931 - src.training.trainer - INFO - Epoch 010 | train/loss=0.4108 | train/cl_loss=0.7189 | train/cold_loss=0.2908 | train/cold_bpr_loss=0.3897 | train/skipped_batches=0.0000 | train/lr=0.0003
+2026-06-13 11:15:18
+2026-06-13 04:15:18,931 - src.training.trainer - INFO - Epoch 010 | val | HR@1=0.0185 | NDCG@1=0.0185 | HR@5=0.0579 | NDCG@5=0.0251 | HR@10=0.0838 | NDCG@10=0.0300 | HR@20=0.1130 | NDCG@20=0.0352 | HR@50=0.1619 | NDCG@50=0.0425
+2026-06-13 11:15:18
+2026-06-13 04:15:18,931 - src.training.trainer - INFO - Epoch 010 | val | cold_user (n=3022) | HR@1=0.0000 | NDCG@1=0.0000 | HR@5=0.0000 | NDCG@5=0.0000 | HR@10=0.0040 | NDCG@10=0.0009 | HR@20=0.0040 | NDCG@20=0.0009 | HR@50=0.0132 | NDCG@50=0.0021
+2026-06-13 11:15:18
+2026-06-13 04:15:18,931 - src.training.trainer - INFO - Epoch 010 | val | warm_user (n=12370) | HR@1=0.0230 | NDCG@1=0.0230 | HR@5=0.0720 | NDCG@5=0.0313 | HR@10=0.1033 | NDCG@10=0.0371 | HR@20=0.1397 | NDCG@20=0.0436 | HR@50=0.1982 | NDCG@50=0.0523
+2026-06-13 11:21:55
+2026-06-13 04:21:55,790 - src.training.trainer - INFO - Epoch 011 | train/loss=0.3891 | train/cl_loss=0.6485 | train/cold_loss=0.2947 | train/cold_bpr_loss=0.3839 | train/skipped_batches=0.0000 | train/lr=0.0003
+2026-06-13 11:21:55
+2026-06-13 04:21:55,791 - src.training.trainer - INFO - Epoch 011 | val | HR@1=0.0190 | NDCG@1=0.0190 | HR@5=0.0519 | NDCG@5=0.0229 | HR@10=0.0745 | NDCG@10=0.0270 | HR@20=0.1023 | NDCG@20=0.0319 | HR@50=0.1479 | NDCG@50=0.0387
+2026-06-13 11:21:55
+2026-06-13 04:21:55,791 - src.training.trainer - INFO - Epoch 011 | val | cold_user (n=3022) | HR@1=0.0000 | NDCG@1=0.0000 | HR@5=0.0000 | NDCG@5=0.0000 | HR@10=0.0000 | NDCG@10=0.0000 | HR@20=0.0007 | NDCG@20=0.0001 | HR@50=0.0033 | NDCG@50=0.0005
+2026-06-13 11:21:55
+2026-06-13 04:21:55,791 - src.training.trainer - INFO - Epoch 011 | val | warm_user (n=12370) | HR@1=0.0236 | NDCG@1=0.0236 | HR@5=0.0646 | NDCG@5=0.0285 | HR@10=0.0926 | NDCG@10=0.0336 | HR@20=0.1272 | NDCG@20=0.0397 | HR@50=0.1832 | NDCG@50=0.0480
+2026-06-13 11:28:35
+2026-06-13 04:28:35,898 - src.training.trainer - INFO - Epoch 012 | train/loss=0.3793 | train/cl_loss=0.6728 | train/cold_loss=0.2952 | train/cold_bpr_loss=0.3920 | train/skipped_batches=0.0000 | train/lr=0.0002
+2026-06-13 11:28:35
+2026-06-13 04:28:35,899 - src.training.trainer - INFO - Epoch 012 | val | HR@1=0.0210 | NDCG@1=0.0210 | HR@5=0.0563 | NDCG@5=0.0251 | HR@10=0.0802 | NDCG@10=0.0296 | HR@20=0.1085 | NDCG@20=0.0345 | HR@50=0.1562 | NDCG@50=0.0415
+2026-06-13 11:28:35
+2026-06-13 04:28:35,899 - src.training.trainer - INFO - Epoch 012 | val | cold_user (n=3022) | HR@1=0.0000 | NDCG@1=0.0000 | HR@5=0.0017 | NDCG@5=0.0006 | HR@10=0.0023 | NDCG@10=0.0007 | HR@20=0.0023 | NDCG@20=0.0007 | HR@50=0.0103 | NDCG@50=0.0019
+2026-06-13 11:28:35
+2026-06-13 04:28:35,899 - src.training.trainer - INFO - Epoch 012 | val | warm_user (n=12370) | HR@1=0.0262 | NDCG@1=0.0262 | HR@5=0.0696 | NDCG@5=0.0311 | HR@10=0.0992 | NDCG@10=0.0366 | HR@20=0.1344 | NDCG@20=0.0427 | HR@50=0.1919 | NDCG@50=0.0511
+2026-06-13 11:35:13
+2026-06-13 04:35:13,642 - src.training.trainer - INFO - Epoch 013 | train/loss=0.3709 | train/cl_loss=0.6778 | train/cold_loss=0.2920 | train/cold_bpr_loss=0.3966 | train/skipped_batches=0.0000 | train/lr=0.0002
+2026-06-13 11:35:13
+2026-06-13 04:35:13,642 - src.training.trainer - INFO - Epoch 013 | val | HR@1=0.0217 | NDCG@1=0.0217 | HR@5=0.0619 | NDCG@5=0.0268 | HR@10=0.0883 | NDCG@10=0.0318 | HR@20=0.1235 | NDCG@20=0.0383 | HR@50=0.1733 | NDCG@50=0.0458
+2026-06-13 11:35:13
+2026-06-13 04:35:13,643 - src.training.trainer - INFO - Epoch 013 | val | cold_user (n=3022) | HR@1=0.0033 | NDCG@1=0.0033 | HR@5=0.0113 | NDCG@5=0.0047 | HR@10=0.0113 | NDCG@10=0.0047 | HR@20=0.0357 | NDCG@20=0.0098 | HR@50=0.0384 | NDCG@50=0.0101
+2026-06-13 11:35:13
+2026-06-13 04:35:13,643 - src.training.trainer - INFO - Epoch 013 | val | warm_user (n=12370) | HR@1=0.0262 | NDCG@1=0.0262 | HR@5=0.0742 | NDCG@5=0.0322 | HR@10=0.1071 | NDCG@10=0.0385 | HR@20=0.1449 | NDCG@20=0.0453 | HR@50=0.2062 | NDCG@50=0.0545
+2026-06-13 11:41:52
+2026-06-13 04:41:52,387 - src.training.trainer - INFO - Epoch 014 | train/loss=0.3647 | train/cl_loss=0.7235 | train/cold_loss=0.2930 | train/cold_bpr_loss=0.4157 | train/skipped_batches=0.0000 | train/lr=0.0002
+2026-06-13 11:41:52
+2026-06-13 04:41:52,387 - src.training.trainer - INFO - Epoch 014 | val | HR@1=0.0208 | NDCG@1=0.0208 | HR@5=0.0587 | NDCG@5=0.0257 | HR@10=0.0869 | NDCG@10=0.0312 | HR@20=0.1180 | NDCG@20=0.0366 | HR@50=0.1645 | NDCG@50=0.0435
+2026-06-13 11:41:52
+2026-06-13 04:41:52,387 - src.training.trainer - INFO - Epoch 014 | val | cold_user (n=3022) | HR@1=0.0033 | NDCG@1=0.0033 | HR@5=0.0033 | NDCG@5=0.0025 | HR@10=0.0099 | NDCG@10=0.0043 | HR@20=0.0099 | NDCG@20=0.0043 | HR@50=0.0165 | NDCG@50=0.0053
+2026-06-13 11:41:52
+2026-06-13 04:41:52,388 - src.training.trainer - INFO - Epoch 014 | val | warm_user (n=12370) | HR@1=0.0251 | NDCG@1=0.0251 | HR@5=0.0723 | NDCG@5=0.0314 | HR@10=0.1057 | NDCG@10=0.0377 | HR@20=0.1444 | NDCG@20=0.0445 | HR@50=0.2006 | NDCG@50=0.0528
+2026-06-13 11:48:29
+2026-06-13 04:48:29,937 - src.training.trainer - INFO - Epoch 015 | train/loss=0.3523 | train/cl_loss=0.6809 | train/cold_loss=0.2935 | train/cold_bpr_loss=0.3944 | train/skipped_batches=0.0000 | train/lr=0.0002
+2026-06-13 11:48:29
+2026-06-13 04:48:29,937 - src.training.trainer - INFO - Epoch 015 | val | HR@1=0.0190 | NDCG@1=0.0190 | HR@5=0.0527 | NDCG@5=0.0236 | HR@10=0.0772 | NDCG@10=0.0282 | HR@20=0.1051 | NDCG@20=0.0330 | HR@50=0.1560 | NDCG@50=0.0404
+2026-06-13 11:48:29
+2026-06-13 04:48:29,938 - src.training.trainer - INFO - Epoch 015 | val | cold_user (n=3022) | HR@1=0.0017 | NDCG@1=0.0017 | HR@5=0.0017 | NDCG@5=0.0015 | HR@10=0.0017 | NDCG@10=0.0015 | HR@20=0.0040 | NDCG@20=0.0019 | HR@50=0.0242 | NDCG@50=0.0046
+2026-06-13 11:48:29
+2026-06-13 04:48:29,938 - src.training.trainer - INFO - Epoch 015 | val | warm_user (n=12370) | HR@1=0.0233 | NDCG@1=0.0233 | HR@5=0.0652 | NDCG@5=0.0290 | HR@10=0.0956 | NDCG@10=0.0348 | HR@20=0.1298 | NDCG@20=0.0406 | HR@50=0.1882 | NDCG@50=0.0491
+2026-06-13 11:55:07
+2026-06-13 04:55:07,930 - src.training.trainer - INFO - Epoch 016 | train/loss=0.3429 | train/cl_loss=0.6647 | train/cold_loss=0.2943 | train/cold_bpr_loss=0.3937 | train/skipped_batches=0.0000 | train/lr=0.0002
+2026-06-13 11:55:07
+2026-06-13 04:55:07,931 - src.training.trainer - INFO - Epoch 016 | val | HR@1=0.0218 | NDCG@1=0.0218 | HR@5=0.0665 | NDCG@5=0.0295 | HR@10=0.0938 | NDCG@10=0.0347 | HR@20=0.1252 | NDCG@20=0.0401 | HR@50=0.1742 | NDCG@50=0.0475
+2026-06-13 11:55:07
+2026-06-13 04:55:07,931 - src.training.trainer - INFO - Epoch 016 | val | cold_user (n=3022) | HR@1=0.0017 | NDCG@1=0.0017 | HR@5=0.0261 | NDCG@5=0.0092 | HR@10=0.0261 | NDCG@10=0.0091 | HR@20=0.0318 | NDCG@20=0.0102 | HR@50=0.0450 | NDCG@50=0.0119
+2026-06-13 11:55:07
+2026-06-13 04:55:07,931 - src.training.trainer - INFO - Epoch 016 | val | warm_user (n=12370) | HR@1=0.0268 | NDCG@1=0.0268 | HR@5=0.0763 | NDCG@5=0.0345 | HR@10=0.1103 | NDCG@10=0.0410 | HR@20=0.1480 | NDCG@20=0.0474 | HR@50=0.2058 | NDCG@50=0.0562
+#recsys-graph-v5
+2026-06-13 14:35:27
+2026-06-13 07:35:27,912 - src.training.trainer - INFO - W&B enabled — entity=nguyenmaiductrong37-h-c-vi-n-c-ng-ngh-b-u-ch-nh-vi-n-th-ng project=recsys-graph run=b71jz36l
+2026-06-13 14:43:35
+2026-06-13 07:43:35,593 - src.training.trainer - INFO - Epoch 000 | train/loss=2.3281 | train/cl_loss=2.1829 | train/cold_loss=0.6210 | train/cold_bpr_loss=0.6056 | train/skipped_batches=0.0000 | train/lr=0.0001  <- best: NDCG@10=0.0103, warm_user/NDCG@10=0.0124, cold_user/NDCG@10=0.0017
+2026-06-13 14:43:35
+2026-06-13 07:43:35,593 - src.training.trainer - INFO - Epoch 000 | val | HR@1=0.0055 | NDCG@1=0.0055 | HR@5=0.0210 | NDCG@5=0.0081 | HR@10=0.0330 | NDCG@10=0.0103 | HR@20=0.0507 | NDCG@20=0.0134 | HR@50=0.0925 | NDCG@50=0.0190
+2026-06-13 14:43:35
+2026-06-13 07:43:35,594 - src.training.trainer - INFO - Epoch 000 | val | cold_user (n=3022) | HR@1=0.0000 | NDCG@1=0.0000 | HR@5=0.0033 | NDCG@5=0.0015 | HR@10=0.0043 | NDCG@10=0.0017 | HR@20=0.0073 | NDCG@20=0.0021 | HR@50=0.0162 | NDCG@50=0.0035
+2026-06-13 14:43:35
+2026-06-13 07:43:35,594 - src.training.trainer - INFO - Epoch 000 | val | warm_user (n=12370) | HR@1=0.0069 | NDCG@1=0.0069 | HR@5=0.0254 | NDCG@5=0.0097 | HR@10=0.0400 | NDCG@10=0.0124 | HR@20=0.0614 | NDCG@20=0.0161 | HR@50=0.1112 | NDCG@50=0.0228
+2026-06-13 14:52:57
+2026-06-13 07:52:57,524 - src.training.trainer - INFO - Epoch 001 | train/loss=1.2612 | train/cl_loss=0.9005 | train/cold_loss=0.4507 | train/cold_bpr_loss=0.4662 | train/skipped_batches=0.0000 | train/lr=0.0003  <- best: NDCG@10=0.0175, warm_user/NDCG@10=0.0216
+2026-06-13 14:52:57
+2026-06-13 07:52:57,525 - src.training.trainer - INFO - Epoch 001 | val | HR@1=0.0071 | NDCG@1=0.0071 | HR@5=0.0338 | NDCG@5=0.0129 | HR@10=0.0566 | NDCG@10=0.0175 | HR@20=0.0843 | NDCG@20=0.0228 | HR@50=0.1353 | NDCG@50=0.0305
+2026-06-13 14:52:57
+2026-06-13 07:52:57,525 - src.training.trainer - INFO - Epoch 001 | val | cold_user (n=3022) | HR@1=0.0003 | NDCG@1=0.0003 | HR@5=0.0007 | NDCG@5=0.0005 | HR@10=0.0007 | NDCG@10=0.0005 | HR@20=0.0030 | NDCG@20=0.0009 | HR@50=0.0119 | NDCG@50=0.0022
+2026-06-13 14:52:57
+2026-06-13 07:52:57,525 - src.training.trainer - INFO - Epoch 001 | val | warm_user (n=12370) | HR@1=0.0088 | NDCG@1=0.0088 | HR@5=0.0419 | NDCG@5=0.0160 | HR@10=0.0703 | NDCG@10=0.0216 | HR@20=0.1042 | NDCG@20=0.0281 | HR@50=0.1654 | NDCG@50=0.0375
+2026-06-13 15:02:20
+2026-06-13 08:02:20,869 - src.training.trainer - INFO - Epoch 002 | train/loss=1.0689 | train/cl_loss=0.7682 | train/cold_loss=0.3399 | train/cold_bpr_loss=0.4248 | train/skipped_batches=0.0000 | train/lr=0.0003  <- best: NDCG@10=0.0178, cold_user/NDCG@10=0.0026
+2026-06-13 15:02:20
+2026-06-13 08:02:20,870 - src.training.trainer - INFO - Epoch 002 | val | HR@1=0.0083 | NDCG@1=0.0083 | HR@5=0.0350 | NDCG@5=0.0138 | HR@10=0.0559 | NDCG@10=0.0178 | HR@20=0.0836 | NDCG@20=0.0226 | HR@50=0.1316 | NDCG@50=0.0298
+2026-06-13 15:02:20
+2026-06-13 08:02:20,870 - src.training.trainer - INFO - Epoch 002 | val | cold_user (n=3022) | HR@1=0.0010 | NDCG@1=0.0010 | HR@5=0.0033 | NDCG@5=0.0018 | HR@10=0.0063 | NDCG@10=0.0026 | HR@20=0.0076 | NDCG@20=0.0029 | HR@50=0.0228 | NDCG@50=0.0054
+2026-06-13 15:02:20
+2026-06-13 08:02:20,870 - src.training.trainer - INFO - Epoch 002 | val | warm_user (n=12370) | HR@1=0.0101 | NDCG@1=0.0101 | HR@5=0.0428 | NDCG@5=0.0168 | HR@10=0.0680 | NDCG@10=0.0215 | HR@20=0.1022 | NDCG@20=0.0274 | HR@50=0.1582 | NDCG@50=0.0357
+2026-06-13 15:11:41
+2026-06-13 08:11:41,308 - src.training.trainer - INFO - Epoch 003 | train/loss=0.8809 | train/cl_loss=0.7233 | train/cold_loss=0.2814 | train/cold_bpr_loss=0.4070 | train/skipped_batches=0.0000 | train/lr=0.0003  <- best: warm_user/NDCG@10=0.0218
+2026-06-13 15:11:41
+2026-06-13 08:11:41,308 - src.training.trainer - INFO - Epoch 003 | val | HR@1=0.0092 | NDCG@1=0.0092 | HR@5=0.0345 | NDCG@5=0.0140 | HR@10=0.0536 | NDCG@10=0.0177 | HR@20=0.0812 | NDCG@20=0.0227 | HR@50=0.1244 | NDCG@50=0.0291
+2026-06-13 15:11:41
+2026-06-13 08:11:41,308 - src.training.trainer - INFO - Epoch 003 | val | cold_user (n=3022) | HR@1=0.0000 | NDCG@1=0.0000 | HR@5=0.0010 | NDCG@5=0.0003 | HR@10=0.0023 | NDCG@10=0.0007 | HR@20=0.0040 | NDCG@20=0.0011 | HR@50=0.0116 | NDCG@50=0.0020
+2026-06-13 15:11:41
+2026-06-13 08:11:41,308 - src.training.trainer - INFO - Epoch 003 | val | warm_user (n=12370) | HR@1=0.0115 | NDCG@1=0.0115 | HR@5=0.0427 | NDCG@5=0.0174 | HR@10=0.0661 | NDCG@10=0.0218 | HR@20=0.1001 | NDCG@20=0.0280 | HR@50=0.1519 | NDCG@50=0.0357
+2026-06-13 15:21:00
+2026-06-13 08:21:00,794 - src.training.trainer - INFO - Epoch 004 | train/loss=0.7395 | train/cl_loss=0.7230 | train/cold_loss=0.2673 | train/cold_bpr_loss=0.4028 | train/skipped_batches=0.0000 | train/lr=0.0003  <- best: NDCG@10=0.0225, warm_user/NDCG@10=0.0279
+2026-06-13 15:21:00
+2026-06-13 08:21:00,795 - src.training.trainer - INFO - Epoch 004 | val | HR@1=0.0134 | NDCG@1=0.0134 | HR@5=0.0437 | NDCG@5=0.0186 | HR@10=0.0628 | NDCG@10=0.0225 | HR@20=0.0890 | NDCG@20=0.0269 | HR@50=0.1327 | NDCG@50=0.0332
+2026-06-13 15:21:00
+2026-06-13 08:21:00,795 - src.training.trainer - INFO - Epoch 004 | val | cold_user (n=3022) | HR@1=0.0000 | NDCG@1=0.0000 | HR@5=0.0000 | NDCG@5=0.0000 | HR@10=0.0000 | NDCG@10=0.0000 | HR@20=0.0030 | NDCG@20=0.0005 | HR@50=0.0060 | NDCG@50=0.0009
+2026-06-13 15:21:00
+2026-06-13 08:21:00,795 - src.training.trainer - INFO - Epoch 004 | val | warm_user (n=12370) | HR@1=0.0167 | NDCG@1=0.0167 | HR@5=0.0544 | NDCG@5=0.0231 | HR@10=0.0782 | NDCG@10=0.0279 | HR@20=0.1100 | NDCG@20=0.0334 | HR@50=0.1636 | NDCG@50=0.0411
+2026-06-13 15:30:25
+2026-06-13 08:30:25,915 - src.training.trainer - INFO - Epoch 005 | train/loss=0.6367 | train/cl_loss=0.6915 | train/cold_loss=0.2683 | train/cold_bpr_loss=0.3935 | train/skipped_batches=0.0000 | train/lr=0.0003  <- best: NDCG@10=0.0246, warm_user/NDCG@10=0.0305
+2026-06-13 15:30:25
+2026-06-13 08:30:25,915 - src.training.trainer - INFO - Epoch 005 | val | HR@1=0.0149 | NDCG@1=0.0149 | HR@5=0.0472 | NDCG@5=0.0205 | HR@10=0.0677 | NDCG@10=0.0246 | HR@20=0.0949 | NDCG@20=0.0292 | HR@50=0.1383 | NDCG@50=0.0357
+2026-06-13 15:30:25
+2026-06-13 08:30:25,915 - src.training.trainer - INFO - Epoch 005 | val | cold_user (n=3022) | HR@1=0.0000 | NDCG@1=0.0000 | HR@5=0.0010 | NDCG@5=0.0004 | HR@10=0.0010 | NDCG@10=0.0004 | HR@20=0.0010 | NDCG@20=0.0004 | HR@50=0.0033 | NDCG@50=0.0007
+2026-06-13 15:30:25
+2026-06-13 08:30:25,916 - src.training.trainer - INFO - Epoch 005 | val | warm_user (n=12370) | HR@1=0.0186 | NDCG@1=0.0186 | HR@5=0.0584 | NDCG@5=0.0254 | HR@10=0.0840 | NDCG@10=0.0305 | HR@20=0.1178 | NDCG@20=0.0363 | HR@50=0.1713 | NDCG@50=0.0443
+2026-06-13 15:39:49
+2026-06-13 08:39:49,435 - src.training.trainer - INFO - Epoch 006 | train/loss=0.5721 | train/cl_loss=0.7006 | train/cold_loss=0.2687 | train/cold_bpr_loss=0.3967 | train/skipped_batches=0.0000 | train/lr=0.0003
+2026-06-13 15:39:49
+2026-06-13 08:39:49,435 - src.training.trainer - INFO - Epoch 006 | val | HR@1=0.0134 | NDCG@1=0.0134 | HR@5=0.0403 | NDCG@5=0.0175 | HR@10=0.0600 | NDCG@10=0.0215 | HR@20=0.0857 | NDCG@20=0.0259 | HR@50=0.1244 | NDCG@50=0.0314
+2026-06-13 15:39:49
+2026-06-13 08:39:49,436 - src.training.trainer - INFO - Epoch 006 | val | cold_user (n=3022) | HR@1=0.0000 | NDCG@1=0.0000 | HR@5=0.0000 | NDCG@5=0.0000 | HR@10=0.0000 | NDCG@10=0.0000 | HR@20=0.0003 | NDCG@20=0.0001 | HR@50=0.0003 | NDCG@50=0.0001
+2026-06-13 15:39:49
+2026-06-13 08:39:49,436 - src.training.trainer - INFO - Epoch 006 | val | warm_user (n=12370) | HR@1=0.0167 | NDCG@1=0.0167 | HR@5=0.0502 | NDCG@5=0.0218 | HR@10=0.0747 | NDCG@10=0.0268 | HR@20=0.1065 | NDCG@20=0.0322 | HR@50=0.1546 | NDCG@50=0.0390
+2026-06-13 15:49:26
+2026-06-13 08:49:26,562 - src.training.trainer - INFO - Epoch 007 | train/loss=0.5255 | train/cl_loss=0.6992 | train/cold_loss=0.2699 | train/cold_bpr_loss=0.3952 | train/skipped_batches=0.0000 | train/lr=0.0003  <- best: NDCG@10=0.0258, warm_user/NDCG@10=0.0321
+2026-06-13 15:49:26
+2026-06-13 08:49:26,563 - src.training.trainer - INFO - Epoch 007 | val | HR@1=0.0167 | NDCG@1=0.0167 | HR@5=0.0494 | NDCG@5=0.0215 | HR@10=0.0717 | NDCG@10=0.0258 | HR@20=0.1017 | NDCG@20=0.0310 | HR@50=0.1440 | NDCG@50=0.0373
+2026-06-13 15:49:26
+2026-06-13 08:49:26,563 - src.training.trainer - INFO - Epoch 007 | val | cold_user (n=3022) | HR@1=0.0000 | NDCG@1=0.0000 | HR@5=0.0000 | NDCG@5=0.0000 | HR@10=0.0000 | NDCG@10=0.0000 | HR@20=0.0106 | NDCG@20=0.0018 | HR@50=0.0132 | NDCG@50=0.0023
+2026-06-13 15:49:26
+2026-06-13 08:49:26,563 - src.training.trainer - INFO - Epoch 007 | val | warm_user (n=12370) | HR@1=0.0208 | NDCG@1=0.0208 | HR@5=0.0615 | NDCG@5=0.0268 | HR@10=0.0892 | NDCG@10=0.0321 | HR@20=0.1240 | NDCG@20=0.0381 | HR@50=0.1760 | NDCG@50=0.0459
+2026-06-13 15:58:43
+2026-06-13 08:58:43,578 - src.training.trainer - INFO - Epoch 008 | train/loss=0.4859 | train/cl_loss=0.6385 | train/cold_loss=0.2747 | train/cold_bpr_loss=0.3876 | train/skipped_batches=0.0000 | train/lr=0.0003
+2026-06-13 15:58:43
+2026-06-13 08:58:43,578 - src.training.trainer - INFO - Epoch 008 | val | HR@1=0.0141 | NDCG@1=0.0141 | HR@5=0.0415 | NDCG@5=0.0183 | HR@10=0.0596 | NDCG@10=0.0217 | HR@20=0.0828 | NDCG@20=0.0255 | HR@50=0.1221 | NDCG@50=0.0311
+2026-06-13 15:58:43
+2026-06-13 08:58:43,578 - src.training.trainer - INFO - Epoch 008 | val | cold_user (n=3022) | HR@1=0.0000 | NDCG@1=0.0000 | HR@5=0.0000 | NDCG@5=0.0000 | HR@10=0.0000 | NDCG@10=0.0000 | HR@20=0.0000 | NDCG@20=0.0000 | HR@50=0.0003 | NDCG@50=0.0001
+2026-06-13 15:58:43
+2026-06-13 08:58:43,579 - src.training.trainer - INFO - Epoch 008 | val | warm_user (n=12370) | HR@1=0.0175 | NDCG@1=0.0175 | HR@5=0.0517 | NDCG@5=0.0228 | HR@10=0.0741 | NDCG@10=0.0270 | HR@20=0.1030 | NDCG@20=0.0318 | HR@50=0.1518 | NDCG@50=0.0387
+2026-06-13 16:08:12
+2026-06-13 09:08:12,438 - src.training.trainer - INFO - Epoch 009 | train/loss=0.4641 | train/cl_loss=0.6719 | train/cold_loss=0.2745 | train/cold_bpr_loss=0.3976 | train/skipped_batches=0.0000 | train/lr=0.0003
+2026-06-13 16:08:12
+2026-06-13 09:08:12,439 - src.training.trainer - INFO - Epoch 009 | val | HR@1=0.0161 | NDCG@1=0.0161 | HR@5=0.0491 | NDCG@5=0.0215 | HR@10=0.0700 | NDCG@10=0.0253 | HR@20=0.0966 | NDCG@20=0.0299 | HR@50=0.1442 | NDCG@50=0.0368
+2026-06-13 16:08:12
+2026-06-13 09:08:12,439 - src.training.trainer - INFO - Epoch 009 | val | cold_user (n=3022) | HR@1=0.0000 | NDCG@1=0.0000 | HR@5=0.0000 | NDCG@5=0.0000 | HR@10=0.0000 | NDCG@10=0.0000 | HR@20=0.0040 | NDCG@20=0.0007 | HR@50=0.0199 | NDCG@50=0.0029
+2026-06-13 16:08:12
+2026-06-13 09:08:12,439 - src.training.trainer - INFO - Epoch 009 | val | warm_user (n=12370) | HR@1=0.0200 | NDCG@1=0.0200 | HR@5=0.0610 | NDCG@5=0.0267 | HR@10=0.0871 | NDCG@10=0.0315 | HR@20=0.1192 | NDCG@20=0.0371 | HR@50=0.1745 | NDCG@50=0.0451
+2026-06-13 16:17:47
+2026-06-13 09:17:47,489 - src.training.trainer - INFO - Epoch 010 | train/loss=0.4441 | train/cl_loss=0.6817 | train/cold_loss=0.2752 | train/cold_bpr_loss=0.3948 | train/skipped_batches=0.0000 | train/lr=0.0003  <- best: NDCG@10=0.0394, warm_user/NDCG@10=0.0423, cold_user/NDCG@10=0.0275
+2026-06-13 16:17:47
+2026-06-13 09:17:47,490 - src.training.trainer - INFO - Epoch 010 | val | HR@1=0.0311 | NDCG@1=0.0311 | HR@5=0.0737 | NDCG@5=0.0346 | HR@10=0.0988 | NDCG@10=0.0394 | HR@20=0.1314 | NDCG@20=0.0450 | HR@50=0.1860 | NDCG@50=0.0537
+2026-06-13 16:17:47
+2026-06-13 09:17:47,490 - src.training.trainer - INFO - Epoch 010 | val | cold_user (n=3022) | HR@1=0.0311 | NDCG@1=0.0311 | HR@5=0.0361 | NDCG@5=0.0251 | HR@10=0.0460 | NDCG@10=0.0275 | HR@20=0.0520 | NDCG@20=0.0286 | HR@50=0.0917 | NDCG@50=0.0347
+2026-06-13 16:17:47
+2026-06-13 09:17:47,490 - src.training.trainer - INFO - Epoch 010 | val | warm_user (n=12370) | HR@1=0.0310 | NDCG@1=0.0310 | HR@5=0.0829 | NDCG@5=0.0369 | HR@10=0.1116 | NDCG@10=0.0423 | HR@20=0.1508 | NDCG@20=0.0491 | HR@50=0.2091 | NDCG@50=0.0583
+2026-06-13 16:27:25
+2026-06-13 09:27:25,914 - src.training.trainer - INFO - Epoch 011 | train/loss=0.4211 | train/cl_loss=0.6150 | train/cold_loss=0.2790 | train/cold_bpr_loss=0.3841 | train/skipped_batches=0.0000 | train/lr=0.0003
+2026-06-13 16:27:25
+2026-06-13 09:27:25,915 - src.training.trainer - INFO - Epoch 011 | val | HR@1=0.0163 | NDCG@1=0.0163 | HR@5=0.0466 | NDCG@5=0.0204 | HR@10=0.0690 | NDCG@10=0.0247 | HR@20=0.0945 | NDCG@20=0.0290 | HR@50=0.1390 | NDCG@50=0.0353
+2026-06-13 16:27:25
+2026-06-13 09:27:25,915 - src.training.trainer - INFO - Epoch 011 | val | cold_user (n=3022) | HR@1=0.0000 | NDCG@1=0.0000 | HR@5=0.0000 | NDCG@5=0.0000 | HR@10=0.0000 | NDCG@10=0.0000 | HR@20=0.0000 | NDCG@20=0.0000 | HR@50=0.0116 | NDCG@50=0.0015
+2026-06-13 16:27:25
+2026-06-13 09:27:25,915 - src.training.trainer - INFO - Epoch 011 | val | warm_user (n=12370) | HR@1=0.0203 | NDCG@1=0.0203 | HR@5=0.0580 | NDCG@5=0.0253 | HR@10=0.0859 | NDCG@10=0.0307 | HR@20=0.1175 | NDCG@20=0.0361 | HR@50=0.1702 | NDCG@50=0.0435
+2026-06-13 16:36:52
+2026-06-13 09:36:52,590 - src.training.trainer - INFO - Epoch 012 | train/loss=0.4089 | train/cl_loss=0.6371 | train/cold_loss=0.2772 | train/cold_bpr_loss=0.3869 | train/skipped_batches=0.0000 | train/lr=0.0002
+2026-06-13 16:36:52
+2026-06-13 09:36:52,591 - src.training.trainer - INFO - Epoch 012 | val | HR@1=0.0155 | NDCG@1=0.0155 | HR@5=0.0436 | NDCG@5=0.0194 | HR@10=0.0605 | NDCG@10=0.0225 | HR@20=0.0869 | NDCG@20=0.0268 | HR@50=0.1310 | NDCG@50=0.0331
+2026-06-13 16:36:52
+2026-06-13 09:36:52,591 - src.training.trainer - INFO - Epoch 012 | val | cold_user (n=3022) | HR@1=0.0000 | NDCG@1=0.0000 | HR@5=0.0000 | NDCG@5=0.0000 | HR@10=0.0000 | NDCG@10=0.0000 | HR@20=0.0000 | NDCG@20=0.0000 | HR@50=0.0149 | NDCG@50=0.0020
+2026-06-13 16:36:52
+2026-06-13 09:36:52,591 - src.training.trainer - INFO - Epoch 012 | val | warm_user (n=12370) | HR@1=0.0192 | NDCG@1=0.0192 | HR@5=0.0542 | NDCG@5=0.0241 | HR@10=0.0753 | NDCG@10=0.0279 | HR@20=0.1082 | NDCG@20=0.0334 | HR@50=0.1593 | NDCG@50=0.0407
+2026-06-13 16:46:15
+2026-06-13 09:46:15,544 - src.training.trainer - INFO - Epoch 013 | train/loss=0.3965 | train/cl_loss=0.6441 | train/cold_loss=0.2777 | train/cold_bpr_loss=0.3904 | train/skipped_batches=0.0000 | train/lr=0.0002
+2026-06-13 16:46:15
+2026-06-13 09:46:15,545 - src.training.trainer - INFO - Epoch 013 | val | HR@1=0.0178 | NDCG@1=0.0178 | HR@5=0.0502 | NDCG@5=0.0225 | HR@10=0.0691 | NDCG@10=0.0260 | HR@20=0.0955 | NDCG@20=0.0304 | HR@50=0.1394 | NDCG@50=0.0366
+2026-06-13 16:46:15
+2026-06-13 09:46:15,545 - src.training.trainer - INFO - Epoch 013 | val | cold_user (n=3022) | HR@1=0.0000 | NDCG@1=0.0000 | HR@5=0.0000 | NDCG@5=0.0000 | HR@10=0.0000 | NDCG@10=0.0000 | HR@20=0.0000 | NDCG@20=0.0000 | HR@50=0.0113 | NDCG@50=0.0013
+2026-06-13 16:46:15
+2026-06-13 09:46:15,545 - src.training.trainer - INFO - Epoch 013 | val | warm_user (n=12370) | HR@1=0.0222 | NDCG@1=0.0222 | HR@5=0.0625 | NDCG@5=0.0280 | HR@10=0.0859 | NDCG@10=0.0323 | HR@20=0.1188 | NDCG@20=0.0378 | HR@50=0.1707 | NDCG@50=0.0452
+2026-06-13 16:55:33
+2026-06-13 09:55:33,788 - src.training.trainer - INFO - Epoch 014 | train/loss=0.3902 | train/cl_loss=0.6845 | train/cold_loss=0.2746 | train/cold_bpr_loss=0.3995 | train/skipped_batches=0.0000 | train/lr=0.0002
+2026-06-13 16:55:33
+2026-06-13 09:55:33,789 - src.training.trainer - INFO - Epoch 014 | val | HR@1=0.0179 | NDCG@1=0.0179 | HR@5=0.0500 | NDCG@5=0.0225 | HR@10=0.0714 | NDCG@10=0.0264 | HR@20=0.0984 | NDCG@20=0.0311 | HR@50=0.1449 | NDCG@50=0.0377
+2026-06-13 16:55:33
+2026-06-13 09:55:33,789 - src.training.trainer - INFO - Epoch 014 | val | cold_user (n=3022) | HR@1=0.0000 | NDCG@1=0.0000 | HR@5=0.0000 | NDCG@5=0.0000 | HR@10=0.0000 | NDCG@10=0.0000 | HR@20=0.0000 | NDCG@20=0.0000 | HR@50=0.0043 | NDCG@50=0.0005
+2026-06-13 16:55:33
+2026-06-13 09:55:33,789 - src.training.trainer - INFO - Epoch 014 | val | warm_user (n=12370) | HR@1=0.0223 | NDCG@1=0.0223 | HR@5=0.0622 | NDCG@5=0.0280 | HR@10=0.0888 | NDCG@10=0.0328 | HR@20=0.1225 | NDCG@20=0.0387 | HR@50=0.1793 | NDCG@50=0.0468
+2026-06-13 17:04:52
+2026-06-13 10:04:52,754 - src.training.trainer - INFO - Epoch 015 | train/loss=0.3767 | train/cl_loss=0.6443 | train/cold_loss=0.2769 | train/cold_bpr_loss=0.3940 | train/skipped_batches=0.0000 | train/lr=0.0002
+2026-06-13 17:04:52
+2026-06-13 10:04:52,755 - src.training.trainer - INFO - Epoch 015 | val | HR@1=0.0164 | NDCG@1=0.0164 | HR@5=0.0487 | NDCG@5=0.0214 | HR@10=0.0718 | NDCG@10=0.0258 | HR@20=0.0963 | NDCG@20=0.0299 | HR@50=0.1388 | NDCG@50=0.0360
+2026-06-13 17:04:52
+2026-06-13 10:04:52,755 - src.training.trainer - INFO - Epoch 015 | val | cold_user (n=3022) | HR@1=0.0000 | NDCG@1=0.0000 | HR@5=0.0000 | NDCG@5=0.0000 | HR@10=0.0000 | NDCG@10=0.0000 | HR@20=0.0000 | NDCG@20=0.0000 | HR@50=0.0013 | NDCG@50=0.0002
+2026-06-13 17:04:52
+2026-06-13 10:04:52,755 - src.training.trainer - INFO - Epoch 015 | val | warm_user (n=12370) | HR@1=0.0205 | NDCG@1=0.0205 | HR@5=0.0605 | NDCG@5=0.0267 | HR@10=0.0893 | NDCG@10=0.0322 | HR@20=0.1199 | NDCG@20=0.0372 | HR@50=0.1724 | NDCG@50=0.0448
+2026-06-13 17:14:24
+2026-06-13 10:14:24,945 - src.training.trainer - INFO - Epoch 016 | train/loss=0.3670 | train/cl_loss=0.6290 | train/cold_loss=0.2778 | train/cold_bpr_loss=0.3876 | train/skipped_batches=0.0000 | train/lr=0.0002
+2026-06-13 17:14:24
+2026-06-13 10:14:24,945 - src.training.trainer - INFO - Epoch 016 | val | HR@1=0.0149 | NDCG@1=0.0149 | HR@5=0.0464 | NDCG@5=0.0205 | HR@10=0.0654 | NDCG@10=0.0239 | HR@20=0.0903 | NDCG@20=0.0281 | HR@50=0.1354 | NDCG@50=0.0344
+2026-06-13 17:14:24
+2026-06-13 10:14:24,946 - src.training.trainer - INFO - Epoch 016 | val | cold_user (n=3022) | HR@1=0.0000 | NDCG@1=0.0000 | HR@5=0.0000 | NDCG@5=0.0000 | HR@10=0.0000 | NDCG@10=0.0000 | HR@20=0.0000 | NDCG@20=0.0000 | HR@50=0.0026 | NDCG@50=0.0003
+2026-06-13 17:14:24
+2026-06-13 10:14:24,946 - src.training.trainer - INFO - Epoch 016 | val | warm_user (n=12370) | HR@1=0.0186 | NDCG@1=0.0186 | HR@5=0.0577 | NDCG@5=0.0255 | HR@10=0.0813 | NDCG@10=0.0297 | HR@20=0.1124 | NDCG@20=0.0350 | HR@50=0.1678 | NDCG@50=0.0427
+#recsys-graph-v7
+2026-06-13 12:26:53,118 - src.training.trainer - INFO - Epoch 000 | train/loss=2.5966 | train/cl_loss=4.5891 | train/cold_loss=0.6026 | train/cold_bpr_loss=0.5904 | train/skipped_batches=0.0000 | train/lr=0.0001  <- best: NDCG@10=0.0151, warm_user/NDCG@10=0.0169, cold_user/NDCG@10=0.0079
+2026-06-13 12:26:53,119 - src.training.trainer - INFO - Epoch 000 | val | HR@1=0.0058 | NDCG@1=0.0058 | HR@5=0.0270 | NDCG@5=0.0107 | HR@10=0.0492 | NDCG@10=0.0151 | HR@20=0.0771 | NDCG@20=0.0198 | HR@50=0.1269 | NDCG@50=0.0272
+2026-06-13 12:26:53,119 - src.training.trainer - INFO - Epoch 000 | val | cold_user (n=3022) | HR@1=0.0017 | NDCG@1=0.0017 | HR@5=0.0040 | NDCG@5=0.0019 | HR@10=0.0295 | NDCG@10=0.0079 | HR@20=0.0304 | NDCG@20=0.0080 | HR@50=0.0397 | NDCG@50=0.0093
+2026-06-13 12:26:53,119 - src.training.trainer - INFO - Epoch 000 | val | warm_user (n=12370) | HR@1=0.0068 | NDCG@1=0.0068 | HR@5=0.0327 | NDCG@5=0.0128 | HR@10=0.0541 | NDCG@10=0.0169 | HR@20=0.0884 | NDCG@20=0.0227 | HR@50=0.1482 | NDCG@50=0.0316
+2026-06-13 12:35:16,120 - src.training.trainer - INFO - Epoch 001 | train/loss=1.7395 | train/cl_loss=4.3413 | train/cold_loss=0.4031 | train/cold_bpr_loss=0.4485 | train/skipped_batches=0.0000 | train/lr=0.0003  <- best: NDCG@10=0.0175, warm_user/NDCG@10=0.0216
+2026-06-13 12:35:16,120 - src.training.trainer - INFO - Epoch 001 | val | HR@1=0.0087 | NDCG@1=0.0087 | HR@5=0.0340 | NDCG@5=0.0135 | HR@10=0.0542 | NDCG@10=0.0175 | HR@20=0.0846 | NDCG@20=0.0225 | HR@50=0.1409 | NDCG@50=0.0310
+2026-06-13 12:35:16,121 - src.training.trainer - INFO - Epoch 001 | val | cold_user (n=3022) | HR@1=0.0000 | NDCG@1=0.0000 | HR@5=0.0007 | NDCG@5=0.0003 | HR@10=0.0017 | NDCG@10=0.0006 | HR@20=0.0033 | NDCG@20=0.0011 | HR@50=0.0122 | NDCG@50=0.0023
+2026-06-13 12:35:16,121 - src.training.trainer - INFO - Epoch 001 | val | warm_user (n=12370) | HR@1=0.0108 | NDCG@1=0.0108 | HR@5=0.0422 | NDCG@5=0.0167 | HR@10=0.0671 | NDCG@10=0.0216 | HR@20=0.1044 | NDCG@20=0.0278 | HR@50=0.1723 | NDCG@50=0.0380
+2026-06-13 12:43:32,953 - src.training.trainer - INFO - Epoch 002 | train/loss=1.4062 | train/cl_loss=3.2961 | train/cold_loss=0.2987 | train/cold_bpr_loss=0.4113 | train/skipped_batches=0.0000 | train/lr=0.0003
+2026-06-13 12:43:32,954 - src.training.trainer - INFO - Epoch 002 | val | HR@1=0.0094 | NDCG@1=0.0094 | HR@5=0.0316 | NDCG@5=0.0131 | HR@10=0.0518 | NDCG@10=0.0171 | HR@20=0.0784 | NDCG@20=0.0217 | HR@50=0.1262 | NDCG@50=0.0287
+2026-06-13 12:43:32,954 - src.training.trainer - INFO - Epoch 002 | val | cold_user (n=3022) | HR@1=0.0013 | NDCG@1=0.0013 | HR@5=0.0026 | NDCG@5=0.0018 | HR@10=0.0063 | NDCG@10=0.0027 | HR@20=0.0106 | NDCG@20=0.0035 | HR@50=0.0169 | NDCG@50=0.0045
+2026-06-13 12:43:32,954 - src.training.trainer - INFO - Epoch 002 | val | warm_user (n=12370) | HR@1=0.0113 | NDCG@1=0.0113 | HR@5=0.0387 | NDCG@5=0.0159 | HR@10=0.0629 | NDCG@10=0.0207 | HR@20=0.0949 | NDCG@20=0.0261 | HR@50=0.1530 | NDCG@50=0.0347
+2026-06-13 12:51:49,560 - src.training.trainer - INFO - Epoch 003 | train/loss=1.0835 | train/cl_loss=2.2227 | train/cold_loss=0.2585 | train/cold_bpr_loss=0.3986 | train/skipped_batches=0.0000 | train/lr=0.0003
+2026-06-13 12:51:49,560 - src.training.trainer - INFO - Epoch 003 | val | HR@1=0.0069 | NDCG@1=0.0069 | HR@5=0.0260 | NDCG@5=0.0106 | HR@10=0.0426 | NDCG@10=0.0136 | HR@20=0.0645 | NDCG@20=0.0175 | HR@50=0.1052 | NDCG@50=0.0230
+2026-06-13 12:51:49,560 - src.training.trainer - INFO - Epoch 003 | val | cold_user (n=3022) | HR@1=0.0000 | NDCG@1=0.0000 | HR@5=0.0000 | NDCG@5=0.0000 | HR@10=0.0000 | NDCG@10=0.0000 | HR@20=0.0013 | NDCG@20=0.0003 | HR@50=0.0030 | NDCG@50=0.0006
+2026-06-13 12:51:49,561 - src.training.trainer - INFO - Epoch 003 | val | warm_user (n=12370) | HR@1=0.0086 | NDCG@1=0.0086 | HR@5=0.0323 | NDCG@5=0.0132 | HR@10=0.0530 | NDCG@10=0.0170 | HR@20=0.0800 | NDCG@20=0.0217 | HR@50=0.1302 | NDCG@50=0.0285
+2026-06-13 13:00:08,045 - src.training.trainer - INFO - Epoch 004 | train/loss=0.9182 | train/cl_loss=1.8620 | train/cold_loss=0.2487 | train/cold_bpr_loss=0.3895 | train/skipped_batches=0.0000 | train/lr=0.0003  <- best: NDCG@10=0.0190, warm_user/NDCG@10=0.0236
+2026-06-13 13:00:08,045 - src.training.trainer - INFO - Epoch 004 | val | HR@1=0.0099 | NDCG@1=0.0099 | HR@5=0.0366 | NDCG@5=0.0154 | HR@10=0.0553 | NDCG@10=0.0190 | HR@20=0.0846 | NDCG@20=0.0240 | HR@50=0.1273 | NDCG@50=0.0301
+2026-06-13 13:00:08,046 - src.training.trainer - INFO - Epoch 004 | val | cold_user (n=3022) | HR@1=0.0000 | NDCG@1=0.0000 | HR@5=0.0000 | NDCG@5=0.0000 | HR@10=0.0020 | NDCG@10=0.0003 | HR@20=0.0020 | NDCG@20=0.0003 | HR@50=0.0046 | NDCG@50=0.0007
+2026-06-13 13:00:08,046 - src.training.trainer - INFO - Epoch 004 | val | warm_user (n=12370) | HR@1=0.0124 | NDCG@1=0.0124 | HR@5=0.0456 | NDCG@5=0.0192 | HR@10=0.0683 | NDCG@10=0.0236 | HR@20=0.1048 | NDCG@20=0.0298 | HR@50=0.1573 | NDCG@50=0.0373
+2026-06-13 13:08:27,906 - src.training.trainer - INFO - Epoch 005 | train/loss=0.8157 | train/cl_loss=1.6584 | train/cold_loss=0.2515 | train/cold_bpr_loss=0.3842 | train/skipped_batches=0.0000 | train/lr=0.0003  <- best: NDCG@10=0.0213, warm_user/NDCG@10=0.0265
+2026-06-13 13:08:27,907 - src.training.trainer - INFO - Epoch 005 | val | HR@1=0.0114 | NDCG@1=0.0114 | HR@5=0.0409 | NDCG@5=0.0172 | HR@10=0.0621 | NDCG@10=0.0213 | HR@20=0.0858 | NDCG@20=0.0253 | HR@50=0.1295 | NDCG@50=0.0317
+2026-06-13 13:08:27,907 - src.training.trainer - INFO - Epoch 005 | val | cold_user (n=3022) | HR@1=0.0000 | NDCG@1=0.0000 | HR@5=0.0000 | NDCG@5=0.0000 | HR@10=0.0007 | NDCG@10=0.0001 | HR@20=0.0010 | NDCG@20=0.0002 | HR@50=0.0063 | NDCG@50=0.0010
+2026-06-13 13:08:27,907 - src.training.trainer - INFO - Epoch 005 | val | warm_user (n=12370) | HR@1=0.0142 | NDCG@1=0.0142 | HR@5=0.0509 | NDCG@5=0.0214 | HR@10=0.0771 | NDCG@10=0.0265 | HR@20=0.1065 | NDCG@20=0.0315 | HR@50=0.1596 | NDCG@50=0.0392
+2026-06-13 13:16:45,953 - src.training.trainer - INFO - Epoch 006 | train/loss=0.7587 | train/cl_loss=1.5949 | train/cold_loss=0.2529 | train/cold_bpr_loss=0.3912 | train/skipped_batches=0.0000 | train/lr=0.0003
+2026-06-13 13:16:45,954 - src.training.trainer - INFO - Epoch 006 | val | HR@1=0.0107 | NDCG@1=0.0107 | HR@5=0.0365 | NDCG@5=0.0154 | HR@10=0.0564 | NDCG@10=0.0193 | HR@20=0.0797 | NDCG@20=0.0234 | HR@50=0.1192 | NDCG@50=0.0290
+2026-06-13 13:16:45,954 - src.training.trainer - INFO - Epoch 006 | val | cold_user (n=3022) | HR@1=0.0000 | NDCG@1=0.0000 | HR@5=0.0000 | NDCG@5=0.0000 | HR@10=0.0000 | NDCG@10=0.0000 | HR@20=0.0000 | NDCG@20=0.0000 | HR@50=0.0003 | NDCG@50=0.0001
+2026-06-13 13:16:45,954 - src.training.trainer - INFO - Epoch 006 | val | warm_user (n=12370) | HR@1=0.0133 | NDCG@1=0.0133 | HR@5=0.0454 | NDCG@5=0.0192 | HR@10=0.0702 | NDCG@10=0.0240 | HR@20=0.0992 | NDCG@20=0.0291 | HR@50=0.1482 | NDCG@50=0.0361
+2026-06-13 13:25:02,820 - src.training.trainer - INFO - Epoch 007 | train/loss=0.7157 | train/cl_loss=1.5356 | train/cold_loss=0.2549 | train/cold_bpr_loss=0.3912 | train/skipped_batches=0.0000 | train/lr=0.0003
+2026-06-13 13:25:02,821 - src.training.trainer - INFO - Epoch 007 | val | HR@1=0.0100 | NDCG@1=0.0100 | HR@5=0.0331 | NDCG@5=0.0136 | HR@10=0.0517 | NDCG@10=0.0171 | HR@20=0.0749 | NDCG@20=0.0210 | HR@50=0.1110 | NDCG@50=0.0260
+2026-06-13 13:25:02,821 - src.training.trainer - INFO - Epoch 007 | val | cold_user (n=3022) | HR@1=0.0000 | NDCG@1=0.0000 | HR@5=0.0000 | NDCG@5=0.0000 | HR@10=0.0000 | NDCG@10=0.0000 | HR@20=0.0000 | NDCG@20=0.0000 | HR@50=0.0000 | NDCG@50=0.0000
+2026-06-13 13:25:02,821 - src.training.trainer - INFO - Epoch 007 | val | warm_user (n=12370) | HR@1=0.0124 | NDCG@1=0.0124 | HR@5=0.0412 | NDCG@5=0.0169 | HR@10=0.0643 | NDCG@10=0.0213 | HR@20=0.0932 | NDCG@20=0.0261 | HR@50=0.1381 | NDCG@50=0.0324
+2026-06-13 13:33:18,324 - src.training.trainer - INFO - Epoch 008 | train/loss=0.6737 | train/cl_loss=1.4134 | train/cold_loss=0.2590 | train/cold_bpr_loss=0.3824 | train/skipped_batches=0.0000 | train/lr=0.0003
+2026-06-13 13:33:18,325 - src.training.trainer - INFO - Epoch 008 | val | HR@1=0.0118 | NDCG@1=0.0118 | HR@5=0.0402 | NDCG@5=0.0169 | HR@10=0.0598 | NDCG@10=0.0205 | HR@20=0.0832 | NDCG@20=0.0245 | HR@50=0.1229 | NDCG@50=0.0301
+2026-06-13 13:33:18,325 - src.training.trainer - INFO - Epoch 008 | val | cold_user (n=3022) | HR@1=0.0000 | NDCG@1=0.0000 | HR@5=0.0000 | NDCG@5=0.0000 | HR@10=0.0000 | NDCG@10=0.0000 | HR@20=0.0007 | NDCG@20=0.0001 | HR@50=0.0007 | NDCG@50=0.0001
+2026-06-13 13:33:18,325 - src.training.trainer - INFO - Epoch 008 | val | warm_user (n=12370) | HR@1=0.0146 | NDCG@1=0.0146 | HR@5=0.0500 | NDCG@5=0.0211 | HR@10=0.0744 | NDCG@10=0.0255 | HR@20=0.1034 | NDCG@20=0.0305 | HR@50=0.1527 | NDCG@50=0.0375
+2026-06-13 13:41:35,237 - src.training.trainer - INFO - Epoch 009 | train/loss=0.6585 | train/cl_loss=1.4432 | train/cold_loss=0.2589 | train/cold_bpr_loss=0.3920 | train/skipped_batches=0.0000 | train/lr=0.0003
+2026-06-13 13:41:35,238 - src.training.trainer - INFO - Epoch 009 | val | HR@1=0.0120 | NDCG@1=0.0120 | HR@5=0.0388 | NDCG@5=0.0165 | HR@10=0.0563 | NDCG@10=0.0197 | HR@20=0.0822 | NDCG@20=0.0240 | HR@50=0.1212 | NDCG@50=0.0295
+2026-06-13 13:41:35,238 - src.training.trainer - INFO - Epoch 009 | val | cold_user (n=3022) | HR@1=0.0000 | NDCG@1=0.0000 | HR@5=0.0000 | NDCG@5=0.0000 | HR@10=0.0000 | NDCG@10=0.0000 | HR@20=0.0000 | NDCG@20=0.0000 | HR@50=0.0007 | NDCG@50=0.0001
+2026-06-13 13:41:35,239 - src.training.trainer - INFO - Epoch 009 | val | warm_user (n=12370) | HR@1=0.0150 | NDCG@1=0.0150 | HR@5=0.0483 | NDCG@5=0.0205 | HR@10=0.0701 | NDCG@10=0.0245 | HR@20=0.1023 | NDCG@20=0.0298 | HR@50=0.1507 | NDCG@50=0.0367
+2026-06-13 13:49:53,895 - src.training.trainer - INFO - Epoch 010 | train/loss=0.6414 | train/cl_loss=1.4287 | train/cold_loss=0.2579 | train/cold_bpr_loss=0.3910 | train/skipped_batches=0.0000 | train/lr=0.0003  <- best: NDCG@10=0.0232, warm_user/NDCG@10=0.0289
+2026-06-13 13:49:53,896 - src.training.trainer - INFO - Epoch 010 | val | HR@1=0.0140 | NDCG@1=0.0140 | HR@5=0.0462 | NDCG@5=0.0195 | HR@10=0.0668 | NDCG@10=0.0232 | HR@20=0.0912 | NDCG@20=0.0272 | HR@50=0.1340 | NDCG@50=0.0332
+2026-06-13 13:49:53,896 - src.training.trainer - INFO - Epoch 010 | val | cold_user (n=3022) | HR@1=0.0000 | NDCG@1=0.0000 | HR@5=0.0000 | NDCG@5=0.0000 | HR@10=0.0000 | NDCG@10=0.0000 | HR@20=0.0000 | NDCG@20=0.0000 | HR@50=0.0113 | NDCG@50=0.0014
+2026-06-13 13:49:53,896 - src.training.trainer - INFO - Epoch 010 | val | warm_user (n=12370) | HR@1=0.0175 | NDCG@1=0.0175 | HR@5=0.0575 | NDCG@5=0.0242 | HR@10=0.0831 | NDCG@10=0.0289 | HR@20=0.1134 | NDCG@20=0.0338 | HR@50=0.1640 | NDCG@50=0.0410
+test | epoch 10 | best.pt
+  HR@1         0.0055
+  NDCG@1       0.0055
+  HR@5         0.0211
+  NDCG@5       0.0096
+  HR@10        0.0344
+  NDCG@10      0.0130
+  HR@20        0.0519
+  NDCG@20      0.0161
+  HR@50        0.0847
+  NDCG@50      0.0209
+  cold_user/HR@1 0.0048
+  cold_user/NDCG@1 0.0048
+  warm_user/HR@1 0.0056
+  warm_user/NDCG@1 0.0056
+  cold_user/HR@5 0.0152
+  cold_user/NDCG@5 0.0071
+  warm_user/HR@5 0.0226
+  warm_user/NDCG@5 0.0103
+  cold_user/HR@10 0.0180
+  cold_user/NDCG@10 0.0079
+  warm_user/HR@10 0.0384
+  warm_user/NDCG@10 0.0143
+  cold_user/HR@20 0.0235
+  cold_user/NDCG@20 0.0092
+  warm_user/HR@20 0.0590
+  warm_user/NDCG@20 0.0179
+  cold_user/HR@50 0.0387
+  cold_user/NDCG@50 0.0118
+  warm_user/HR@50 0.0960
+  warm_user/NDCG@50 0.0231
+  cold_user/n  1446.0000
+  warm_user/n  5852.0000
