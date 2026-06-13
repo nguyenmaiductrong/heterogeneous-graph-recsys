@@ -354,10 +354,7 @@ class BehaviorAwareNeighborSampler:
         if seed_type == "user":
             return self._sample_user_seeds(seeds, generator)
         if seed_type == "product":
-            # Product seed luon collaborative: item nhan canh user->product that
-            # (khop phan bo item-side luc train). Item cold (0 buyer) tu roi ve
-            # content-only ben trong _sample_product_seeds_collab.
-            return self._sample_product_seeds_collab(seeds, generator)
+            return self._sample_product_seeds_vectorized(seeds, generator)
         raise ValueError(f"Unknown seed_type: {seed_type}")
 
     def _sample_user_seeds(
