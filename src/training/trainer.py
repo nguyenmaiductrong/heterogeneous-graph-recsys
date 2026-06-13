@@ -14,7 +14,7 @@ from src.model.bpatmp import BPATMPModel
 from src.core.contracts import BEHAVIOR_TYPES, EvalInput
 from src.graph.neighbor_sampler import BehaviorAwareNeighborSampler
 from src.training.losses import (
-    BPATMPTotalLoss,
+    BPATMPLoss,
     bpr_loss,
     build_user_history_csr,
     cold_consistency_loss,
@@ -120,16 +120,11 @@ class TrainConfig:
     wandb_artifact_name: str = "bpatmp-checkpoint"
     wandb_save_every: int = 5
 
-    # Loss: L = L_BPR + lambda_cl*HierarchicalMBCL + lambda_conv*Funnel + lambda_mono*MonoDecay
-    cl_weight: float = 0.1   # lambda_cl (HierarchicalMBCL)
-    cl_tau: float = 0.1      # HierarchicalMBCL temperature
+    # Loss: L_total = L_BPR + lambda_cl * L_InfoNCE(view, purchase)
+    cl_weight: float = 0.1   # lambda_cl
+    cl_tau: float = 0.1      # InfoNCE temperature
     bpr_alpha: float = 0.5   # exponent in w_b = (N_p / N_b) ** alpha
     bpr_w_min: float = 0.05  # floor for w_b
-    lambda_conv: float = 0.0      # FunnelPriorLoss (s_view < s_cart < s_purchase)
-    lambda_mono: float = 0.0      # MonotonicDecayPriorLoss (lam_view >= lam_purchase)
-    funnel_margin: float = 0.1
-    hierarchy_cl_hard_k: int = 32         # hard negatives trong HierarchicalMBCL
-    hierarchy_cl_min_pair_overlap: int = 4
     cl_every_k: int = 1      # 1 = every step, K>1 = run CL every K steps
     use_bf16: bool = True
     max_view_triplets: int = -1
@@ -210,20 +205,9 @@ class TrainConfig:
 
             # Loss
             cl_weight=loss.get("lambda_cl", t.get("cl_weight", cls.cl_weight)),
-            cl_tau=float(cfg.get("hierarchy_cl", {}).get("tau", loss.get("tau", cls.cl_tau))),
+            cl_tau=float(loss.get("tau", cls.cl_tau)),
             bpr_alpha=loss.get("alpha", cls.bpr_alpha),
             bpr_w_min=loss.get("w_min", cls.bpr_w_min),
-            lambda_conv=float(loss.get("lambda_conv", cls.lambda_conv)),
-            lambda_mono=float(loss.get("lambda_mono", cls.lambda_mono)),
-            funnel_margin=float(loss.get("funnel_margin", cls.funnel_margin)),
-            hierarchy_cl_hard_k=int(
-                cfg.get("hierarchy_cl", {}).get("hard_k", cls.hierarchy_cl_hard_k)
-            ),
-            hierarchy_cl_min_pair_overlap=int(
-                cfg.get("hierarchy_cl", {}).get(
-                    "min_pair_overlap", cls.hierarchy_cl_min_pair_overlap
-                )
-            ),
             cl_every_k=int(t.get("cl_every_k", a100.get("cl_every_k", cls.cl_every_k))),
             use_bf16=t.get("use_bf16", cls.use_bf16),
             max_view_triplets=t.get("max_view_triplets", cls.max_view_triplets),
@@ -379,21 +363,6 @@ class TemporalBatchSampler(Sampler):
             yield list(range(start, min(start + self.batch_size, self.n)))
 
 
-def _extract_per_behavior_lambdas(model: BPATMPModel) -> dict[str, torch.Tensor]:
-    """Mean across encoder layers of softplus(raw_lambda) per behavior.
-
-    Used by MonotonicDecayPriorLoss; returns a 1-element scalar tensor per
-    behavior so the prior can compute relu(lam_strong - lam_weak) ** 2.
-    """
-    base = model._orig_mod if hasattr(model, "_orig_mod") else model  # torch.compile unwrap
-    convs = base.encoder.convs
-    stacked = torch.stack(
-        [F.softplus(c.temporal_attn.raw_lambda) for c in convs], dim=0
-    )  # (n_layers, 3)
-    means = stacked.mean(dim=0)  # (3,)
-    return {beh: means[i] for i, beh in enumerate(BEHAVIOR_TYPES)}
-
-
 def _format_main_metrics(metrics: dict[str, float]) -> str:
     return " | ".join(f"{k}={v:.4f}" for k, v in metrics.items())
 
@@ -452,7 +421,7 @@ def train_epoch(
     sampler: BehaviorAwareNeighborSampler,
     dataloader: DataLoader,
     optimizer: torch.optim.Optimizer,
-    loss_fn: BPATMPTotalLoss,
+    loss_fn: BPATMPLoss,
     scaler: torch.amp.GradScaler,
     device: torch.device,
     num_neg: int = 1,
@@ -582,31 +551,17 @@ def train_epoch(
 
             users_per_beh = {b: u_loc[bev == bid].unique() for bid, b in enumerate(BEHAVIOR_TYPES)}
 
-            # CL: HierarchicalMBCL tren toan bo hanh vi (loss tu xu ly overlap cap).
+            # CL: compare view vs purchase embeddings for users with both behaviors
             run_cl = loss_fn.lambda_cl > 0 and (cl_every_k <= 1 or (step % cl_every_k == 0))
-            beh_embs_for_cl = (
-                {b: beh_embs[b].float() for b in BEHAVIOR_TYPES}
-                if run_cl and beh_embs is not None
-                else None
-            )
-            users_per_beh_for_cl = users_per_beh if (run_cl and beh_embs is not None) else None
-
-            # Funnel scores tren CUNG tap purchase positive (u,i) -> ep s_view<s_cart<s_purchase.
-            funnel_scores: dict[str, torch.Tensor] | None = None
-            if loss_fn.lambda_conv > 0 and beh_embs is not None:
-                p_mask = bev == purchase_id
-                if p_mask.any():
-                    u_p = u_loc[p_mask]
-                    pos_emb_p = item_emb[pp_loc[p_mask]]
-                    funnel_scores = {
-                        b: (beh_embs[b][u_p] * pos_emb_p).sum(-1)
-                        for b in BEHAVIOR_TYPES
-                    }
-
-            # Per-behavior decay rates cho monotonic prior (lam_view >= lam_purchase).
-            lambdas_dict: dict[str, torch.Tensor] | None = None
-            if loss_fn.lambda_mono > 0:
-                lambdas_dict = _extract_per_behavior_lambdas(model)
+            view_emb_cl: torch.Tensor | None = None
+            purch_emb_cl: torch.Tensor | None = None
+            if run_cl and beh_embs is not None:
+                view_u = users_per_beh.get("view", torch.empty(0, dtype=torch.long, device=device))
+                purch_u = users_per_beh.get("purchase", torch.empty(0, dtype=torch.long, device=device))
+                common = view_u[torch.isin(view_u, purch_u)]
+                if common.numel() >= 2:
+                    view_emb_cl = beh_embs["view"][common]
+                    purch_emb_cl = beh_embs["purchase"][common]
 
             run_cold = cold_on and (cold_every_k <= 1 or (step % cold_every_k == 0))
 
@@ -616,11 +571,8 @@ def train_epoch(
 
         loss, log = loss_fn(
             behavior_losses=behavior_losses,
-            beh_embs=beh_embs_for_cl,
-            users_per_beh=users_per_beh_for_cl,
-            scores=funnel_scores,
-            lambdas=lambdas_dict,
-            model_params=model.embedding_l2_norm(),
+            view_emb=view_emb_cl,
+            purchase_emb=purch_emb_cl,
         )
         if not torch.isfinite(loss):
             raise FloatingPointError(
@@ -1007,25 +959,18 @@ def train(
             generator=loader_generator,
         )
 
-    loss_fn = BPATMPTotalLoss(
+    loss_fn = BPATMPLoss(
         behavior_counts=behavior_counts,
         lambda_cl=cfg.cl_weight,
-        lambda_conv=cfg.lambda_conv,
-        lambda_mono=cfg.lambda_mono,
-        lambda_wd=cfg.l2_lambda,
-        margin=cfg.funnel_margin,
         tau=cfg.cl_tau,
         alpha=cfg.bpr_alpha,
         w_min=cfg.bpr_w_min,
-        cl_hard_k=cfg.hierarchy_cl_hard_k,
-        cl_min_pair_overlap=cfg.hierarchy_cl_min_pair_overlap,
     ).to(device)
     logger.info(
-        "Loss: BPR(alpha=%.2f, w_min=%.2f) + lambda_cl=%.3f(HierMBCL,tau=%.2f,hard_k=%d) "
-        "+ lambda_conv=%.3f + lambda_mono=%.3f + lambda_wd=%.1e",
+        "Loss: BPR(alpha=%.2f, w_min=%.2f, weights=%s) + lambda_cl=%.3f (tau=%.2f)",
         cfg.bpr_alpha, cfg.bpr_w_min,
-        loss_fn.lambda_cl, loss_fn.cl.tau, loss_fn.cl.hard_k,
-        loss_fn.lambda_conv, loss_fn.lambda_mono, loss_fn.lambda_wd,
+        loss_fn.bpr.task_weights.tolist(),
+        loss_fn.lambda_cl, loss_fn.cl.tau,
     )
 
     history_ptr, history_item = build_user_history_csr(train_triplets, n_users=n_users)
