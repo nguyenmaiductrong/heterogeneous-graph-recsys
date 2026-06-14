@@ -8,8 +8,8 @@ data:
   struct_dir: /content/data/node_mappings
 
 cold_start:
-  content_item: true        # cong category+brand vao input embedding product
-  content_scale_init: 0.5   # scale hoc duoc, init nho de warm gan nhu khong doi luc dau
+  content_item: true        # cong category+brand (da chuan hoa) vao input embedding product
+  content_scale_init: 0.05  # scale hoc duoc, nho de content khong at id embedding (id norm ~0.07)
   p_id: 0.15                # xac suat drop ID embedding product khi train (mo phong cold item)
   p_hist: 0.2               # xac suat drop bot history user khi train (mo phong cold user)
 

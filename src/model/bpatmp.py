@@ -533,7 +533,7 @@ class BPATMPModel(nn.Module):
         product_category: Optional[Tensor] = None,
         product_brand: Optional[Tensor] = None,
         content_item: bool = False,
-        content_scale_init: float = 0.5,
+        content_scale_init: float = 0.05,
         p_id: float = 0.0,
     ) -> None:
         super().__init__()
@@ -609,8 +609,15 @@ class BPATMPModel(nn.Module):
                 keep = (torch.rand(id_emb.size(0), 1, device=id_emb.device)
                         >= self.p_id).to(id_emb.dtype)
                 id_emb = id_emb * keep
-            cat_emb = self.input_proj["category"](self.product_category[gid])
-            brand_emb = self.input_proj["brand"](self.product_brand[gid])
+            # IMPORTANT: normalize content before adding. category (~14 rows) and
+            # brand embeddings have a far larger norm than the per-item id embedding
+            # (100k rows -> tiny xavier init, norm ~0.07); adding them raw swamps the
+            # id signal and collapses every item into its category -> random ranking.
+            # Unit-normalize + a small learnable scale keeps content magnitude-stable:
+            # dominant only when the id embedding is untrained (cold item), negligible
+            # once a warm item's id embedding has grown during training.
+            cat_emb = F.normalize(self.input_proj["category"](self.product_category[gid]), dim=-1)
+            brand_emb = F.normalize(self.input_proj["brand"](self.product_brand[gid]), dim=-1)
             x_dict["product"] = id_emb + self.cat_scale * cat_emb + self.brand_scale * brand_emb
 
         edge_index_dict = {}
