@@ -219,7 +219,6 @@ class TemporalAttention(nn.Module):
         rho: int,
         beta: Tensor,
         dst_idx: Tensor,
-        n_dst: int,
     ) -> Tuple[Tensor, Tensor]:
         """
         Args:
@@ -229,8 +228,6 @@ class TemporalAttention(nn.Module):
             rho:     int       relation index
             beta:    [E]       behavior index per edge (0-3)
             dst_idx: [E]       destination node indices
-            n_dst:   int       number of destination nodes (avoids a GPU sync
-                               from index.max().item() inside the softmax)
 
         Returns:
             alpha: [E]  attention weights (scatter-softmax normalised per dst)
@@ -249,7 +246,7 @@ class TemporalAttention(nn.Module):
         decay = lam[beta] * torch.log1p(delta_t / self.tau)
 
         logit = qk + bias + time_bias - decay
-        alpha = self._scatter_softmax(logit, dst_idx, n_dst)
+        alpha = self._scatter_softmax(logit, dst_idx)
 
         c = self.c_rho_beta[rho, beta]
         r = self.r_rho_beta[rho, beta]
@@ -261,8 +258,9 @@ class TemporalAttention(nn.Module):
         return alpha, gate
 
     @staticmethod
-    def _scatter_softmax(logit: Tensor, index: Tensor, N: int) -> Tensor:
+    def _scatter_softmax(logit: Tensor, index: Tensor) -> Tensor:
         """Numerically stable softmax grouped by destination node."""
+        N = int(index.max().item()) + 1
         max_val = logit.new_full((N,), torch.finfo(logit.dtype).min)
         max_val.scatter_reduce_(0, index, logit.detach(), reduce="amax", include_self=True)
         exp_logit = (logit - max_val[index]).exp()
@@ -392,12 +390,10 @@ class BPATMPConv(nn.Module):
                 msg = torch.einsum("oi,ei->eo", W, h_src)
                 beta_tensor = torch.full((E,), beta_idx, device=ref.device, dtype=torch.long)
 
-            N_dst = x_dict[dst_type].size(0)
-            alpha, gate = self.temporal_attn(
-                h_src, h_dst, delta_t, rho, beta_tensor, dst_idx, N_dst
-            )
+            alpha, gate = self.temporal_attn(h_src, h_dst, delta_t, rho, beta_tensor, dst_idx)
 
             weighted = (alpha * gate).unsqueeze(-1) * msg
+            N_dst = x_dict[dst_type].size(0)
             bucket = BEH_BUCKETS[_BEH_IDX[edge_name]]
             if agg_pb[dst_type][bucket] is None:
                 agg_pb[dst_type][bucket] = weighted.new_zeros(N_dst, self.out_dim)
@@ -534,40 +530,36 @@ class BPATMPModel(nn.Module):
         use_grad_checkpoint: bool = True,
         n_freqs: int = 16,
         tau: float = 7.0,
+        product_category: Optional[Tensor] = None,
+        product_brand: Optional[Tensor] = None,
+        content_item: bool = False,
+        content_scale_init: float = 0.5,
+        p_id: float = 0.0,
     ) -> None:
         super().__init__()
         self.embed_dim = embed_dim
 
-        # Cold-slot: user/product reserve them MOT hang embedding phu o cuoi bang
-        # (index = so node graph) dung lam "seed" residual cho node cold / ID moi.
-        # Cold slot CHI la hang tra cuu, KHONG phai node trong graph: num_nodes_dict
-        # truyen cho sampler / node_counts / EvalInput giu nguyen.
-        self._cold_slot_types = ("user", "product")
-        self.cold_slot_idx: Dict[str, int] = {}
-
-        proj = {}
-        for ntype, num_nodes in num_nodes_dict.items():
-            if ntype in self._cold_slot_types:
-                proj[ntype] = nn.Embedding(num_nodes + 1, embed_dim)
-                self.cold_slot_idx[ntype] = num_nodes  # hang cuoi cung
-            else:
-                proj[ntype] = nn.Embedding(num_nodes, embed_dim)
-        self.input_proj = nn.ModuleDict(proj)
+        self.input_proj = nn.ModuleDict({
+            ntype: nn.Embedding(num_nodes, embed_dim)
+            for ntype, num_nodes in num_nodes_dict.items()
+        })
         for emb in self.input_proj.values():
             nn.init.xavier_uniform_(emb.weight)
 
-        # EMA cua cold-slot dung CHI luc eval. Cold user/item that co 0 canh ->
-        # tat ca dung chung dung mot vector cold-slot -> cold metric = chat luong
-        # MOT ranking toan cuc duy nhat. Vector cold-slot tuc thoi bi BPR cold
-        # (batch ngau nhien) keo lang thang moi step -> ranking xao lai moi epoch
-        # -> cold dao dong 0<->0.016. EMA lam vector eval doi cham => het dao dong.
-        # decay=0 (mac dinh) = tat, eval dung weight tuc thoi nhu cu.
-        self.cold_slot_ema_decay: float = 0.0
-        for ntype, idx in self.cold_slot_idx.items():
-            self.register_buffer(
-                f"_cold_slot_ema_{ntype}",
-                self.input_proj[ntype].weight.detach()[idx].clone(),
-            )
+        # Cold-start: content-grounded product embedding (category + brand).
+        # Every product (incl. cold/never-purchased) has exactly one category
+        # and one brand, so a cold item still receives signal from these side
+        # features even when its ID embedding is untrained.
+        self.content_item = bool(content_item and product_category is not None
+                                 and product_brand is not None)
+        self.p_id = float(p_id)
+        if self.content_item:
+            self.register_buffer("product_category", product_category.long())
+            self.register_buffer("product_brand", product_brand.long())
+            # Learnable scales; init small so warm items keep relying on their
+            # (well-trained) ID embedding while cold items gain content signal.
+            self.cat_scale = nn.Parameter(torch.tensor(float(content_scale_init)))
+            self.brand_scale = nn.Parameter(torch.tensor(float(content_scale_init)))
 
         self.beh_proj = nn.ModuleDict({
             beh: nn.Linear(embed_dim, embed_dim, bias=False)
@@ -588,17 +580,6 @@ class BPATMPModel(nn.Module):
 
         self.intent_codebook = IntentCodebook(n_intents=n_intents, dim=embed_dim)
 
-    @torch.no_grad()
-    def update_cold_slot_ema(self) -> None:
-        """Cap nhat EMA cold-slot sau moi optimizer step. No-op khi decay<=0."""
-        d = self.cold_slot_ema_decay
-        if d <= 0.0:
-            return
-        for ntype, idx in self.cold_slot_idx.items():
-            buf = getattr(self, f"_cold_slot_ema_{ntype}")
-            cur = self.input_proj[ntype].weight.detach()[idx]
-            buf.mul_(d).add_(cur.to(buf.dtype), alpha=1.0 - d)
-
     def embedding_l2_norm(self) -> Tensor:
         total = torch.tensor(0.0, device=next(self.parameters()).device)
         for emb in self.input_proj.values():
@@ -610,33 +591,27 @@ class BPATMPModel(nn.Module):
         subgraph,
         return_beh_embs: bool = False,
         ref_time: Optional[float] = None,
-        cold_mask: Optional[Dict[str, Tensor]] = None,
-        use_cold_ema: bool = False,
     ) -> Tuple[Tensor, Tensor, Optional[Dict[str, Tensor]]]:
-        """
-        cold_mask: optional {node_type: bool [N_ntype]} theo dung thu tu node trong
-            subgraph[node_type].x. Hang True bi thay self-embedding bang cold slot
-            (mo phong "khong biet ID nay") — neighbor aggregation van chay binh thuong
-            tren cac canh that. Giu nguyen subgraph[ntype].x nen searchsorted/CSR khong lech.
-        """
         x_dict = {}
         for ntype, emb in self.input_proj.items():
             if ntype in subgraph.node_types and hasattr(subgraph[ntype], "x"):
                 node_ids = subgraph[ntype].x
-                x = emb(node_ids)
-                if cold_mask is not None and ntype in self.cold_slot_idx:
-                    m = cold_mask.get(ntype)
-                    if m is not None and m.any():
-                        if use_cold_ema and self.cold_slot_ema_decay > 0.0:
-                            cold_vec = getattr(self, f"_cold_slot_ema_{ntype}")
-                        else:
-                            cold_vec = emb.weight[self.cold_slot_idx[ntype]]
-                        x = torch.where(
-                            m.to(x.device).unsqueeze(-1),
-                            cold_vec.to(x.dtype).expand_as(x),
-                            x,
-                        )
-                x_dict[ntype] = x
+                x_dict[ntype] = emb(node_ids)
+
+        # Compose content-grounded product embedding for cold-start robustness.
+        if self.content_item and "product" in x_dict:
+            gid = subgraph["product"].x.long()
+            id_emb = x_dict["product"]
+            # ID-embedding dropout: randomly silence the per-item ID component
+            # during training so the model learns to rank from content + graph
+            # context (the exact situation a cold item is in at inference).
+            if self.training and self.p_id > 0:
+                keep = (torch.rand(id_emb.size(0), 1, device=id_emb.device)
+                        >= self.p_id).to(id_emb.dtype)
+                id_emb = id_emb * keep
+            cat_emb = self.input_proj["category"](self.product_category[gid])
+            brand_emb = self.input_proj["brand"](self.product_brand[gid])
+            x_dict["product"] = id_emb + self.cat_scale * cat_emb + self.brand_scale * brand_emb
 
         edge_index_dict = {}
         edge_ts_dict = {}
@@ -672,41 +647,3 @@ class BPATMPModel(nn.Module):
             return user_emb, item_emb, beh_embs
 
         return user_emb, item_emb
-
-    @torch.no_grad()
-    def infer_cold(
-        self,
-        seed_ids: Tensor,
-        sampler,
-        seed_type: str = "user",
-        ref_time: Optional[float] = None,
-        use_cold_slot: bool = False,
-    ) -> Tensor:
-        """Infer embedding cho cold nodes qua graph hien co.
-
-        Cold user voi >= 1 tuong tac: sampler tu dong di qua
-        product → category/brand, BPATMPConv propagate thong tin
-        category + brand len user embedding — khong can module rieng.
-
-        Cold item moi (chua co tuong tac): sampler lay category + brand
-        tu structural edges va aggregate vao item embedding.
-
-        Args:
-            seed_ids:  (N,) global node indices
-            sampler:   BehaviorAwareNeighborSampler
-            seed_type: "user" hoac "product"
-            ref_time:  reference timestamp
-            use_cold_slot: neu True, bo qua self-embedding ID cua seed (dung cold slot
-                lam residual) — danh cho ID hoan toan moi/khong tin ID embedding da hoc.
-        Returns:
-            (N, embed_dim)
-        """
-        device = next(self.parameters()).device
-        seed_ids = seed_ids.to(device)
-        sub = sampler.sample(seed_ids, seed_type=seed_type).to(device)
-        cold_mask = None
-        if use_cold_slot and seed_type in self.cold_slot_idx:
-            node_x = sub[seed_type].x
-            cold_mask = {seed_type: torch.isin(node_x, seed_ids)}
-        user_emb, item_emb = self(sub, ref_time=ref_time, cold_mask=cold_mask)
-        return user_emb if seed_type == "user" else item_emb

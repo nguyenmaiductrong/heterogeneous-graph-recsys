@@ -34,18 +34,16 @@ spark:
   session_timezone: "UTC"
 
 protocol:
-  # MOT duong xu ly du lieu duy nhat tren TOAN BO du lieu.
-  # Vocab cap chi muc cho MOI user/item -> moi node co index on dinh, khong node nao
-  # bi drop khoi val/test. Metadata category/brand lay tu moi row (listing-time) de
-  # moi node deu co content. Mo hinh nhan toan bo du lieu va tu hoc cach goi y.
-  name: "all_data_new_purchase_full_ranking"
+  name: "warm_new_purchase_full_ranking"
   behaviors: ["view", "cart", "purchase"]
   target_behavior: "purchase"
   split_timezone: "UTC"
+  transductive_item_vocab: false
+  allow_transductive_item_metadata: false
   target: "new_purchase"
   ground_truth: "all_new_purchases"
   drop_repeated_train_purchases_from_eval: true
-  candidate_set: "all_items"
+  candidate_set: "warm_train_items"
 
 filter:
   min_user_interactions: 5

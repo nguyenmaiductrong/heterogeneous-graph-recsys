@@ -66,21 +66,8 @@ class CheckpointManager:
             config=config or {},
             settings=wandb.Settings(init_timeout=300),
         )
-        self.project = self.run.project or self.project
-        self.entity = self.run.entity or self.entity
-        if not self.entity:
-            raise RuntimeError(
-                "W&B entity is empty after wandb.init(). Set wandb.entity in config "
-                "or export WANDB_ENTITY before training."
-            )
         self._save_run_id(self.run.id)
-        logger.info(
-            "W&B run ready: entity=%s project=%s name=%s id=%s",
-            self.entity,
-            self.project,
-            self.run.name,
-            self.run.id,
-        )
+        logger.info("W&B run ready: id=%s", self.run.id)
         return self.run
 
     def load_checkpoint(
@@ -89,7 +76,6 @@ class CheckpointManager:
         optimizer: torch.optim.Optimizer,
         scaler: torch.amp.GradScaler | None = None,
         device: torch.device | None = None,
-        scheduler: torch.optim.lr_scheduler._LRScheduler | None = None,
     ) -> int:
         if device is None:
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -104,8 +90,6 @@ class CheckpointManager:
         optimizer.load_state_dict(ckpt["optimizer_state_dict"])
         if scaler is not None and "scaler_state_dict" in ckpt:
             scaler.load_state_dict(ckpt["scaler_state_dict"])
-        if scheduler is not None and "scheduler_state_dict" in ckpt:
-            scheduler.load_state_dict(ckpt["scheduler_state_dict"])
 
         logger.info("Resumed epoch %d (loss=%.4f)", ckpt["epoch"], ckpt.get("loss", float("nan")))
         return ckpt["epoch"] + 1
@@ -118,7 +102,6 @@ class CheckpointManager:
         scaler: torch.amp.GradScaler | None = None,
         loss: float = float("nan"),
         metrics: dict | None = None,
-        scheduler: torch.optim.lr_scheduler._LRScheduler | None = None,
     ) -> bool:
         """
         Pipeline: luu local -> upload -> verify cloud -> cleanup.
@@ -132,7 +115,7 @@ class CheckpointManager:
         if self.run is None:
             raise RuntimeError("Call init_wandb() first.")
 
-        ckpt_path = self._save_local(model, optimizer, scaler, epoch, loss, metrics, scheduler)
+        ckpt_path = self._save_local(model, optimizer, scaler, epoch, loss, metrics)
         logged_artifact = self._upload_artifact(ckpt_path, epoch, loss, metrics)
 
         self._last_logged_artifact = logged_artifact
@@ -222,7 +205,6 @@ class CheckpointManager:
         epoch: int,
         loss: float,
         metrics: dict | None,
-        scheduler: torch.optim.lr_scheduler._LRScheduler | None = None,
     ) -> Path:
         path = self.local_dir / f"epoch_{epoch:03d}.pt"
         state: dict = {
@@ -234,8 +216,6 @@ class CheckpointManager:
         }
         if scaler is not None:
             state["scaler_state_dict"] = scaler.state_dict()
-        if scheduler is not None:
-            state["scheduler_state_dict"] = scheduler.state_dict()
         torch.save(state, path)
         logger.info("Saved local: %s (%.1f MB)", path, path.stat().st_size / 1e6)
         return path
@@ -309,12 +289,8 @@ class CheckpointManager:
             return None
         return max(pt_files, key=lambda p: p.stat().st_mtime)
 
-    _PROTECTED_CKPTS = frozenset({"best.pt", "best_warm.pt", "best_cold.pt"})
-
     def _cleanup_old_checkpoints(self, keep: Path) -> None:
         for pt in list(self.local_dir.glob("*.pt")) + list(self.local_dir.glob("*.pth")):
-            if pt.name in self._PROTECTED_CKPTS:
-                continue
             if pt.resolve() != keep.resolve():
                 pt.unlink()
                 logger.info("Removed old checkpoint: %s", pt)

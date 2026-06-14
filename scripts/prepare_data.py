@@ -32,16 +32,8 @@ from src.data_pipeline.transform import (
     map_all_train_events,
     build_structural_edges,
     build_train_mask,
-    compute_cold_masks,
 )
-from src.data_pipeline.load import (
-    save_artifacts,
-    save_cold_masks,
-    save_node_counts,
-    save_test_mask,
-    save_trainval_edges,
-    verify_artifacts,
-)
+from src.data_pipeline.load import save_artifacts, save_node_counts, verify_artifacts
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +75,7 @@ def _parse_args() -> argparse.Namespace:
     _proto = _cfg.get("protocol", {})
 
     p = argparse.ArgumentParser(
-        description="Chuẩn bị dữ liệu REES46 cho BPATMP (toàn bộ dữ liệu — gồm cả node nhiều và ít/không lịch sử train, dự đoán mua mới, xếp hạng đầy đủ).",
+        description="Chuẩn bị dữ liệu REES46 cho BPATMP (warm-start, dự đoán mua mới, xếp hạng đầy đủ).",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument("--csv-glob", required=True)
@@ -148,12 +140,11 @@ def main() -> None:
     filter_cfg = cfg.get("filter", {})
     behavior_cfg = cfg.get("behavior", {})
 
-    # Một đường xử lý duy nhất trên TOÀN BỘ dữ liệu: vocab cấp chỉ mục cho mọi node,
-    # giữ toàn bộ row val/test, và metadata lấy từ mọi row (listing-time) để node ít/
-    # không có lịch sử train vẫn có content. Không còn cờ phân loại node để bật/tắt.
-    metadata_source = "all_rows"
+    transductive_item_vocab = bool(proto_cfg.get("transductive_item_vocab", False))
+    transductive_metadata = bool(proto_cfg.get("allow_transductive_item_metadata", False))
+    metadata_source = "all_rows" if transductive_metadata else "train_only"
     drop_repeated = bool(proto_cfg.get("drop_repeated_train_purchases_from_eval", True))
-    protocol_name = str(proto_cfg.get("name", "all_data_new_purchase_full_ranking"))
+    protocol_name = str(proto_cfg.get("name", "warm_new_purchase_full_ranking"))
     primary_mask_behaviors = tuple(eval_cfg.get("mask_behaviors_primary", ["purchase"]))
     seen_all_mask_behaviors = tuple(eval_cfg.get("mask_behaviors_seen_all", ["view", "cart", "purchase"]))
     behavior_ids = {b: int(i) for b, i in behavior_cfg.get("ids", {"view": 0, "cart": 1, "purchase": 2}).items()}
@@ -198,6 +189,7 @@ def main() -> None:
             args.target_behavior,
             args.train_end,
             args.val_end,
+            transductive_item_vocab=transductive_item_vocab,
             drop_repeated_train_purchases_from_eval=drop_repeated,
             protocol_name=protocol_name,
         )
@@ -212,20 +204,6 @@ def main() -> None:
             clean_spark, spark, split,
             global_cutoff=split.train_end_ts,
             behavior_ids=behavior_ids,
-        ).cache()
-
-        # Rolling-temporal: log hành vi cửa sổ train+val (< val_cutoff) -> graph cho
-        # đánh giá test (khi dự đoán test, lịch sử quan sát được gồm cả val).
-        trainval_events_spark = map_all_train_events(
-            clean_spark, spark, split,
-            global_cutoff=split.val_end_ts,
-            behavior_ids=behavior_ids,
-        ).cache()
-
-        # Nhãn chẩn đoán (eval-only): node KHONG co train behavior edge nao. KHONG
-        # phai mot nhanh pipeline — chi de bao cao metric phan nhom va sanity-check.
-        user_is_cold, item_is_cold = compute_cold_masks(
-            train_events_spark, split.num_users, split.num_items,
         )
 
         prod_cat_df, prod_brand_df, category2idx, brand2idx, meta_stats = build_structural_edges(
@@ -254,19 +232,6 @@ def main() -> None:
             mask_behaviors=seen_all_mask_behaviors,
         )
 
-        # Mask cho test rolling = item đã mua trong TRAIN+VAL (purchase-only). Dùng
-        # split.train ∪ split.val: bao trùm mọi item user đã mua tới hết val (item
-        # val trùng train đã nằm sẵn trong split.train).
-        test_eval_user_ids = sorted(split.test["user_idx"].astype(int).tolist())
-        trainval_purchases = pd.concat(
-            [split.train[["user_idx", "item_idx"]], split.val[["user_idx", "item_idx"]]],
-            ignore_index=True,
-        )
-        test_mask_primary = build_train_mask(
-            trainval_purchases, None, test_eval_user_ids, spark,
-            mask_behaviors=primary_mask_behaviors,
-        )
-
         _log_phase(6, _total_phases, "Lưu tensor, parquet, ánh xạ")
         save_artifacts(
             split, aux_spark,
@@ -285,15 +250,8 @@ def main() -> None:
             "brand": len(brand2idx),
         }
         save_node_counts(node_counts, args.data_dir)
-        save_cold_masks(user_is_cold, item_is_cold, args.data_dir)
-
-        # Artefact rolling-temporal cho test eval.
-        save_trainval_edges(trainval_events_spark, args.data_dir)
-        save_test_mask(test_mask_primary, args.data_dir)
 
         aux_spark.unpersist()
-        train_events_spark.unpersist()
-        trainval_events_spark.unpersist()
 
     finally:
         spark.stop()

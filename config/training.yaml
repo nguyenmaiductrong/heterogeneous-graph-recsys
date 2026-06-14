@@ -1,34 +1,46 @@
 data:
-  data_dir: /content/data/
+  data_dir: /content/data
   node_counts:
     brand: 3470
     category: 14
     product: 100775
     user: 245778
   struct_dir: /content/data/node_mappings
+
+cold_start:
+  content_item: true        # cong category+brand vao input embedding product
+  content_scale_init: 0.5   # scale hoc duoc, init nho de warm gan nhu khong doi luc dau
+  p_id: 0.15                # xac suat drop ID embedding product khi train (mo phong cold item)
+  p_hist: 0.2               # xac suat drop bot history user khi train (mo phong cold user)
+
 model:
   dropout: 0.2
   embed_dim: 256
   n_layers: 3
   rank: 64
-  use_grad_checkpoint: true
+  use_grad_checkpoint: false
   n_intents: 64
+
 sampler:
-  hop1_budget: 14
-  hop2_budget: 1
+  hop1_budget: 16
+  hop2_budget: 8
   hop1_sample_replace: true
+
 loss:
-  lambda_cl: 0.1
-  tau: 0.1
+  lambda_cl: 0.15
+  lambda_conv: 0.1
+  lambda_mono: 0.05
+  funnel_margin: 0.1
   alpha: 0.5
   w_min: 0.05
-low_history:
-  p_id: 0.15
-  p_hist: 0.2
-  lambda_cold: 0.1
-  lambda_bpr: 0.25
-  cold_every_k: 2
-  slot_ema_decay: 0.9
+
+hierarchy_cl:
+  enabled: true
+  tau: 0.1
+  hard_k: 64
+  min_pair_overlap: 4
+  pair_weights: null
+
 training:
   amp: true
   use_bf16: true
@@ -42,52 +54,35 @@ training:
   seed: 42
   deterministic: false
   l2_lambda: 1.0e-05
-  lr: 0.0003
+  lr: 8.0e-04
   min_lr: 1.0e-06
-  warmup_epochs: 2
+  warmup_epochs: 3
   max_grad_norm: 1.0
   cl_every_k: 2
   max_view_triplets: -1
-  num_neg: 48
-  neg_frac_hard: 0.4
-  neg_hard_pool: 500
-  neg_skip_top: 20
+  num_neg: 32
   num_workers: 8
-  patience: 40
-  save_dir: checkpoints-recsys-v5-l2
-  weight_decay: 0.01
+  patience: 5
+  save_dir: graph-recsys-v1
+  weight_decay: 1.0e-02
   pin_memory: true
   persistent_workers: true
   prefetch_factor: 4
-  progress_bar: false
-  quiet_checkpoint_logs: true
+
 evaluation:
   full_ranking: true
-  primary_metric: NDCG@10
-  ks:
-  - 1
-  - 5
-  - 10
-  - 20
-  - 50
-  metrics:
-  - HR@1
-  - HR@5
-  - HR@10
-  - HR@20
-  - HR@50
-  - NDCG@1
-  - NDCG@5
-  - NDCG@10
-  - NDCG@20
-  - NDCG@50
+  primary_metric: "NDCG@20"
+  ks: [1, 5, 10, 20, 50]
+  metrics: ["HR@1", "HR@5", "HR@10", "HR@20", "HR@50", "NDCG@1", "NDCG@5", "NDCG@10", "NDCG@20", "NDCG@50"]
+
 wandb:
-  artifact_name: recsys-graph-v5-l2
+  artifact_name: graph-recsys-v1
   enabled: true
   entity: nguyenmaiductrong37-h-c-vi-n-c-ng-ngh-b-u-ch-nh-vi-n-th-ng
-  project: recsys-graph
-  run_name: recsys-graph-v5-l2
+  project: graph-recsys
+  run_name: graph-recsys-v1
   save_every: 1
+
 a100:
   allow_tf32: true
   cudnn_benchmark: true

@@ -65,46 +65,34 @@ def main():
     # reuse build_hetero_data from scripts/run_training.py
     import sys; sys.path.insert(0, str(Path(__file__).parents[1]))
     from scripts.run_training import build_hetero_data
-    # Rolling-temporal: test dùng graph train+val (lịch sử tới hết val); val dùng
-    # graph train-only. ref_time = max timestamp cạnh -> tự khớp mốc dự đoán
-    # (val_cutoff cho test, train_cutoff cho val).
-    edge_window = "trainval" if args.split == "test" else "train"
-    hetero, node_counts, behavior_data = build_hetero_data(cfg, edge_window=edge_window)
+    # For test, build_hetero_data(split="test") uses train+val (trainval) edges.
+    hetero, node_counts, behavior_data, content = build_hetero_data(cfg, split=args.split)
 
     import numpy as np
     ref_time = float(np.concatenate([behavior_data[b]["ts"] for b in ["view", "cart", "purchase"]]).max())
-    logger.info("split=%s edge_window=%s ref_time=%s", args.split, edge_window, ref_time)
 
     data_dir = Path(cfg["data"]["data_dir"])
     with open(data_dir / f"{args.split}_ground_truth.pkl", "rb") as f:
         ground_truth = pickle.load(f)
 
-    # Mask loại-trừ theo lịch sử của split: test = item đã mua train+val; val = train.
+    # test ranks against train+val purchases; val ranks against train purchases.
     if args.split == "test":
         mask_path = data_dir / "train_mask_test_purchase_only.pkl"
         if not mask_path.exists():
-            raise FileNotFoundError(
-                f"Thiếu {mask_path} cho đánh giá rolling test. Chạy lại scripts/prepare_data.py "
-                "(bản mới) để sinh test mask (train+val) và cạnh trainval."
-            )
+            mask_path = data_dir / "train_mask_purchase_only.pkl"
     else:
         mask_path = data_dir / "train_mask_purchase_only.pkl"
         if not mask_path.exists():
             mask_path = data_dir / "train_mask.pkl"
     with open(mask_path, "rb") as f:
         exclude_items = {u: list(v) for u, v in pickle.load(f).items()}
-    logger.info("Loaded exclude mask: %s", mask_path.name)
+    logger.info("Eval mask: %s", mask_path.name)
 
     user_is_cold = None
-    item_is_cold = None
-    user_cold_path = data_dir / "user_is_cold.npy"
-    item_cold_path = data_dir / "item_is_cold.npy"
-    if user_cold_path.exists():
-        user_is_cold = torch.from_numpy(np.load(user_cold_path)).bool()
-        logger.info("Loaded cold user mask: %d/%d", int(user_is_cold.sum()), user_is_cold.numel())
-    if item_cold_path.exists():
-        item_is_cold = torch.from_numpy(np.load(item_cold_path)).bool()
-        logger.info("Loaded cold item mask: %d/%d", int(item_is_cold.sum()), item_is_cold.numel())
+    uic_path = data_dir / "user_is_cold.npy"
+    if uic_path.exists():
+        import torch as _t
+        user_is_cold = _t.from_numpy(np.load(uic_path)).bool()
 
     # --- model ---
     from src.model.bpatmp import BPATMPModel
@@ -112,6 +100,7 @@ def main():
     from src.core.contracts import configure_dims
 
     mc = cfg["model"]
+    cold_cfg = cfg.get("cold_start", {})
     configure_dims(mc["embed_dim"])
     model = BPATMPModel(
         num_nodes_dict=node_counts,
@@ -121,6 +110,11 @@ def main():
         n_intents=mc.get("n_intents", 32),
         rank=mc.get("rank", 32),
         use_grad_checkpoint=mc.get("use_grad_checkpoint", False),
+        product_category=content["product_category"],
+        product_brand=content["product_brand"],
+        content_item=cold_cfg.get("content_item", False),
+        content_scale_init=cold_cfg.get("content_scale_init", 0.5),
+        p_id=cold_cfg.get("p_id", 0.0),
     ).to(device)
     model.load_state_dict(ckpt["model_state_dict"])
 
@@ -154,7 +148,6 @@ def main():
         subsample=0,
         ref_time=ref_time,
         user_is_cold=user_is_cold,
-        item_is_cold=item_is_cold,
     )
 
     print(f"\n{'='*45}\n  {args.split} | epoch {ckpt.get('epoch', '?')} | {ckpt_path.name}")

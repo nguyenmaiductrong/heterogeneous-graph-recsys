@@ -27,23 +27,18 @@ def filter_by_train_only_counts(
     min_item_purchases: int,
     rounds: int = 3,
 ) -> DataFrame:
-    """Lọc ngưỡng số đếm hành vi mục tiêu — chỉ trên CỬA SỔ TRAIN.
-
-    Một đường xử lý duy nhất (không phân biệt warm/cold): ngưỡng `min_*_purchases`
-    chỉ áp dụng cho dữ liệu train-window để giữ train graph sạch và không để val/test
-    làm lệch từ vựng huấn luyện. TOÀN BỘ row val/test được giữ lại nguyên vẹn — kể cả
-    của node dưới ngưỡng hoặc chưa từng xuất hiện trong train. Những node ít/không có
-    lịch sử train vì thế vẫn nằm trong đánh giá; mô hình chịu trách nhiệm xử lý chúng
-    (cold slot + content-init), không cần một nhánh pipeline riêng.
+    """Giữ users và items có số đếm hành vi mục tiêu trong cửa sổ train đạt ngưỡng,
+    lặp nhiều vòng nếu cần. Chỉ dùng dữ liệu train-window để quyết định lọc nên không
+    để val/test làm lệch từ vựng huấn luyện.
     """
     if min_user_purchases <= 1 and min_item_purchases <= 1:
         return df
 
-    eval_rows = df.filter(F.col("timestamp") >= train_cutoff_ts)
-    work = df.filter(F.col("timestamp") < train_cutoff_ts)
-
     for r in range(max(rounds, 1)):
-        train_target = work.filter(F.col("event_type") == target_behavior)
+        train_target = (
+            df.filter(F.col("timestamp") < train_cutoff_ts)
+            .filter(F.col("event_type") == target_behavior)
+        )
 
         if min_item_purchases > 1:
             valid_items = (
@@ -51,22 +46,24 @@ def filter_by_train_only_counts(
                 .filter(F.col("count") >= min_item_purchases)
                 .select("product_id")
             )
-            work = work.join(F.broadcast(valid_items), on="product_id", how="inner")
+            df = df.join(F.broadcast(valid_items), on="product_id", how="inner")
 
         if min_user_purchases > 1:
-            train_target = work.filter(F.col("event_type") == target_behavior)
+            train_target = (
+                df.filter(F.col("timestamp") < train_cutoff_ts)
+                .filter(F.col("event_type") == target_behavior)
+            )
             valid_users = (
                 train_target.groupBy("user_id").count()
                 .filter(F.col("count") >= min_user_purchases)
                 .select("user_id")
             )
-            work = work.join(F.broadcast(valid_users), on="user_id", how="inner")
+            df = df.join(F.broadcast(valid_users), on="user_id", how="inner")
 
         logger.info("filter_by_train_only_counts: vòng %d/%d xong.", r + 1, rounds)
 
-    df = work.unionByName(eval_rows)
     df = df.checkpoint(eager=False)
-    logger.info("filter_by_train_only_counts: đã queue checkpoint cuối (giữ toàn bộ row eval).")
+    logger.info("filter_by_train_only_counts: đã queue checkpoint cuối.")
 
     return df
 
@@ -77,10 +74,11 @@ def temporal_split_purchases(
     train_end: str,
     val_end: str,
     *,
+    transductive_item_vocab: bool = False,
     drop_repeated_train_purchases_from_eval: bool = True,
-    protocol_name: str = "all_data_new_purchase_full_ranking",
+    protocol_name: str = "warm_new_purchase_full_ranking",
 ) -> SplitResult:
-
+    
     purchase_spark = df.filter(F.col("event_type") == target_behavior).select(
         F.col("user_id"),
         F.col("product_id").alias("item_id"),
@@ -98,53 +96,12 @@ def temporal_split_purchases(
 
     split = DataSplitter(purchase_df).temporal_split_by_dates(
         train_end=train_end, val_end=val_end,
+        transductive_item_vocab=transductive_item_vocab,
         drop_repeated_train_purchases_from_eval=drop_repeated_train_purchases_from_eval,
         protocol_name=protocol_name,
     )
     logger.info("\n%s", split.summary())
     return split
-
-
-def compute_cold_masks(
-    train_events_spark: DataFrame,
-    num_users: int,
-    num_items: int,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Nhan CHAN DOAN cho danh gia (KHONG phai mot nhanh pipeline): danh dau node
-    KHONG co bat ky train behavior edge nao (view/cart/purchase trong cua so train).
-
-    Pipeline xu ly moi node nhu nhau; nhan nay chi de bao cao metric phan nhom va
-    sanity-check (node thieu lich su chi co structural edge -> content-init).
-
-    Dung train_events (da map idx, da loc < train_cutoff) lam nguon su that — khop dung
-    voi behavior edge thuc su trong graph.
-
-    Tra ve: (user_is_cold[num_users] bool, item_is_cold[num_items] bool).
-    """
-    warm_users = {
-        int(r["user_idx"])
-        for r in train_events_spark.select("user_idx").distinct().collect()
-    }
-    warm_items = {
-        int(r["item_idx"])
-        for r in train_events_spark.select("item_idx").distinct().collect()
-    }
-    user_is_cold = np.ones(num_users, dtype=bool)
-    item_is_cold = np.ones(num_items, dtype=bool)
-    if warm_users:
-        warm_u = np.fromiter(warm_users, dtype=np.int64, count=len(warm_users))
-        warm_u = warm_u[(warm_u >= 0) & (warm_u < num_users)]
-        user_is_cold[warm_u] = False
-    if warm_items:
-        warm_i = np.fromiter(warm_items, dtype=np.int64, count=len(warm_items))
-        warm_i = warm_i[(warm_i >= 0) & (warm_i < num_items)]
-        item_is_cold[warm_i] = False
-    logger.info(
-        "Cold masks: cold_user=%d/%d (%.1f%%), cold_item=%d/%d (%.1f%%)",
-        int(user_is_cold.sum()), num_users, 100.0 * user_is_cold.mean(),
-        int(item_is_cold.sum()), num_items, 100.0 * item_is_cold.mean(),
-    )
-    return user_is_cold, item_is_cold
 
 
 def _user_item_maps(spark: SparkSession, split: SplitResult) -> tuple[DataFrame, DataFrame]:

@@ -248,51 +248,6 @@ def save_artifacts(
     return {"val_ground_truth": val_gt, "test_ground_truth": test_gt}
 
 
-def save_cold_masks(
-    user_is_cold: np.ndarray,
-    item_is_cold: np.ndarray,
-    data_dir: str,
-) -> None:
-    """Luu nhan chan doan no-train-interaction (eval-only). int8 0/1, do dai = num_users/num_items."""
-    u = np.ascontiguousarray(user_is_cold.astype(np.int8))
-    i = np.ascontiguousarray(item_is_cold.astype(np.int8))
-    np.save(os.path.join(data_dir, "user_is_cold.npy"), u)
-    np.save(os.path.join(data_dir, "item_is_cold.npy"), i)
-    logger.info(
-        "đã lưu cold masks: user_is_cold=%d/%d, item_is_cold=%d/%d",
-        int(u.sum()), len(u), int(i.sum()), len(i),
-    )
-
-
-def save_trainval_edges(trainval_events_spark: DataFrame, data_dir: str) -> None:
-    """Lưu cạnh hành vi cửa sổ train+val (< val_cutoff) cho đánh giá rolling-temporal
-    của test. Khi dự đoán test, lịch sử quan sát được = mọi tương tác trước test, nên
-    graph test phải gồm cả cạnh val. (Val eval vẫn dùng cạnh train-only như cũ.)
-
-    trainval_events_spark: schema giống train_events (user_idx, item_idx, behavior,
-    behavior_id, timestamp), đã lọc timestamp < val_cutoff.
-    """
-    for beh in ("view", "cart", "purchase"):
-        _spark_ei_to_npy(
-            trainval_events_spark.filter(F.col("behavior") == beh),
-            src_col="user_idx",
-            dst_col="item_idx",
-            data_dir=data_dir,
-            prefix=f"{beh}_trainval",
-            ts_col="timestamp",
-        )
-
-
-def save_test_mask(test_mask: dict[int, list[int]], data_dir: str) -> None:
-    """Lưu mask loại-trừ cho test rolling = item user đã mua trong train+val
-    (không gợi ý lại item đã mua). Tách khỏi train_mask_purchase_only (chỉ train)
-    để val và test dùng mask đúng theo lịch sử của mình."""
-    path = os.path.join(data_dir, "train_mask_test_purchase_only.pkl")
-    with open(path, "wb") as fh:
-        pickle.dump(test_mask, fh, protocol=pickle.HIGHEST_PROTOCOL)
-    logger.info("đã lưu test mask (train+val purchase): %d user", len(test_mask))
-
-
 def save_node_counts(node_counts: dict[str, int], data_dir: str) -> None:
     path = os.path.join(data_dir, "node_counts.json")
     with open(path, "w") as fh:
@@ -447,89 +402,8 @@ def verify_artifacts(
         "candidate_item_idx.npy phải bằng np.arange(num_items) với giao thức warm_train_items"
     )
     logger.info(
-        "candidate_item_idx.npy OK: %d item (all_items/warm_train_items)",
+        "candidate_item_idx.npy OK: %d item (warm_train_items)",
         len(candidate_arr),
     )
-
-    # --- Nhan chan doan no-train-interaction (eval-only, khong phai nhanh pipeline) ---
-    user_cold_path = os.path.join(data_dir, "user_is_cold.npy")
-    item_cold_path = os.path.join(data_dir, "item_is_cold.npy")
-    if os.path.exists(user_cold_path) and os.path.exists(item_cold_path):
-        user_is_cold = np.load(user_cold_path).astype(bool)
-        item_is_cold = np.load(item_cold_path).astype(bool)
-        n_users = int(node_counts.get("user", 0))
-        assert user_is_cold.shape[0] == n_users, (
-            f"user_is_cold len {user_is_cold.shape[0]} != num_users {n_users}"
-        )
-        assert item_is_cold.shape[0] == num_items, (
-            f"item_is_cold len {item_is_cold.shape[0]} != num_items {num_items}"
-        )
-
-        warm_users = set()
-        warm_items = set()
-        for beh in ("view", "cart", "purchase"):
-            warm_users.update(int(x) for x in behavior_artifacts[beh]["src"].tolist())
-            warm_items.update(int(x) for x in behavior_artifacts[beh]["dst"].tolist())
-
-        cold_user_idx = set(np.nonzero(user_is_cold)[0].tolist())
-        cold_item_idx = set(np.nonzero(item_is_cold)[0].tolist())
-
-        bad_u = cold_user_idx & warm_users
-        assert not bad_u, (
-            f"{len(bad_u)} user gan cold nhung CO behavior edge train (vd {list(bad_u)[:5]})"
-        )
-        bad_i = cold_item_idx & warm_items
-        assert not bad_i, (
-            f"{len(bad_i)} item gan cold nhung CO behavior edge train (vd {list(bad_i)[:5]})"
-        )
-
-        struct_items = set(int(x) for x in pc["product_idx"].tolist())
-        struct_items |= set(int(x) for x in pb["product_idx"].tolist())
-        missing_struct = cold_item_idx - struct_items
-        assert not missing_struct, (
-            f"{len(missing_struct)} cold item KHONG co structural edge (category/brand) "
-            f"-> khong the content-init (vd {list(missing_struct)[:5]})"
-        )
-        logger.info(
-            "Cold masks OK: cold_user=%d/%d, cold_item=%d/%d — cold item deu co structural edge, "
-            "khong co behavior edge.",
-            len(cold_user_idx), n_users, len(cold_item_idx), num_items,
-        )
-    else:
-        logger.info("Khong co nhan chan doan no-train-interaction — bo qua kiem tra.")
-
-    # --- Artefact rolling-temporal cho test (tuy chon) ---
-    trainval_exists = all(
-        os.path.exists(os.path.join(data_dir, f"{b}_trainval_src.npy"))
-        for b in ("view", "cart", "purchase")
-    )
-    if trainval_exists:
-        for b in ("view", "cart", "purchase"):
-            tv_ts = _npy(f"{b}_trainval", "ts")
-            if tv_ts.size > 0:
-                assert int(tv_ts.max()) < val_cutoff_ts, (
-                    f"{b}_trainval ts.max()={int(tv_ts.max())} >= val_cutoff_ts={val_cutoff_ts} "
-                    "(canh trainval co timestamp >= moc test -> ro ri tuong lai vao graph test)"
-                )
-            tv_src = _npy(f"{b}_trainval", "src")
-            tr_src = behavior_artifacts[b]["src"]
-            assert len(tv_src) >= len(tr_src), (
-                f"{b}_trainval ({len(tv_src)}) phai >= {b}_train ({len(tr_src)}) — "
-                "trainval la superset cua train"
-            )
-        test_mask_path = os.path.join(data_dir, "train_mask_test_purchase_only.pkl")
-        if os.path.exists(test_mask_path):
-            with open(test_mask_path, "rb") as fh:
-                test_mask = pickle.load(fh)
-            # Test GT (da bo train+val repeat) khong duoc nam trong test mask (train+val).
-            sanity_check_eval_mask(test_mask, test_gt, split_name="test(rolling)")
-        logger.info(
-            "Rolling test artifacts OK: trainval edges < val_cutoff, test mask roi rac voi test GT."
-        )
-    else:
-        logger.info(
-            "Khong co trainval edges — test eval se chay fixed-snapshot (train-only). "
-            "Chay lai prepare_data de bat danh gia rolling-temporal cho test."
-        )
 
     logger.info("Sanity check PASSED — pipeline sẵn sàng huấn luyện.")

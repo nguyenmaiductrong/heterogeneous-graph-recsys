@@ -90,14 +90,6 @@ def _batch_sample_csr(
     device = ptr.device
     seeds = seeds.long().view(-1)
     bsz = seeds.numel()
-    n_src = ptr.size(0) - 1
-    max_seed = int(seeds.max().item()) if bsz > 0 else -1
-    if max_seed >= n_src:
-        raise IndexError(
-            f"Seed id {max_seed} >= CSR num_src {n_src}. Sampler duoc build voi "
-            "it node hon vocab cua seed — truyen num_nodes_dict (hoac dam bao "
-            "data.num_nodes phu het id) khi khoi tao BehaviorAwareNeighborSampler."
-        )
     lo = ptr[seeds]
     hi = ptr[seeds + 1]
     deg = hi - lo
@@ -177,16 +169,6 @@ class BehaviorAwareNeighborSampler:
                     edge_ts = getattr(data[e], "edge_time", None)
                 if edge_ts is not None and edge_ts.numel() > 0:
                     edge_ts_dict[e] = edge_ts.clone()
-            # Node counts phai lay tu vocab day du (data.num_nodes), KHONG suy tu
-            # max id trong canh: node chi xuat hien o val/test (cold user/item)
-            # nam ngoai canh train -> CSR ptr ngan hon vocab -> ptr[seed+1] OOB
-            # (CUDA assert IndexKernel) khi eval seed toan bo arange(n_items).
-            if num_nodes_dict is None:
-                num_nodes_dict = {
-                    nt: int(data[nt].num_nodes)
-                    for nt in data.node_types
-                    if data[nt].num_nodes is not None
-                }
         else:
             edge_ts_dict = {}
 
@@ -508,132 +490,6 @@ class BehaviorAwareNeighborSampler:
             ("brand", "brands", "product"): (_ei(pb_dst, pb_src), _attr(pb_tag), pb_ts),
         }
 
-        return _pack_hetero_subgraph(device, node_data, edge_data)
-
-    def _sample_product_seeds_collab(
-        self,
-        product_seeds: Tensor,
-        generator: torch.Generator | None,
-    ) -> HeteroData:
-        """Nhu _sample_product_seeds_vectorized nhung BO SUNG hang xom user that
-        (cac user da view/cart/purchase item) qua rev_* CSR. Item embedding nhan
-        them tin hieu collaborative thay vi chi content (category/brand), khop
-        phan bo item-side luc train (luc train item nhan canh user->product).
-
-        Hybrid tu nhien: item co buyer -> co canh hanh vi; item cold (0 buyer)
-        -> per_beh khong sinh edge cho no, chi con structural = content-only nhu
-        cu. Neu CA batch khong co user nao -> fallback content-only.
-        """
-        bsz = product_seeds.numel()
-        device = self._device
-        h1 = self._cfg.hop1_budget
-        _empty2 = torch.empty((2, 0), dtype=torch.long, device=device)
-
-        prod_x = product_seeds
-        prod_b = torch.arange(bsz, device=device, dtype=torch.long)
-        rows = (
-            torch.arange(bsz, device=device, dtype=torch.long)
-            .unsqueeze(1)
-            .expand(bsz, h1)
-        )
-
-        per_beh_rows: dict[str, Tensor] = {}
-        per_beh_users: dict[str, Tensor] = {}
-        per_beh_ts: dict[str, Tensor | None] = {}
-        user_glob_parts: list[Tensor] = []
-        for beh in BEHAVIOR_TYPES:
-            rel = ("product", f"rev_{beh}", "user")
-            if rel not in self._csr:
-                continue
-            ptr, cols = self._csr[rel]
-            sampled, valid, positions = _batch_sample_csr(
-                ptr,
-                cols,
-                product_seeds,
-                h1,
-                generator,
-                replace=self._cfg.hop1_sample_replace,
-                return_positions=True,
-            )
-            if not bool(valid.any()):
-                continue
-            per_beh_rows[beh] = rows[valid]
-            per_beh_users[beh] = sampled[valid]
-            ts_vals = self._csr_edge_ts.get(rel)
-            if ts_vals is not None:
-                safe_pos = positions.clamp(min=0)
-                ets = ts_vals[safe_pos].masked_fill(~valid, -1)
-                per_beh_ts[beh] = ets[valid]
-            else:
-                per_beh_ts[beh] = None
-            user_glob_parts.append(per_beh_users[beh])
-
-        if not user_glob_parts:
-            return self._sample_product_seeds_vectorized(product_seeds, generator)
-
-        uniq_users = torch.unique(torch.cat(user_glob_parts, dim=0))
-        user_b = torch.arange(uniq_users.numel(), device=device, dtype=torch.long)
-
-        beh_edges: dict[str, Tensor] = {}
-        beh_ts: dict[str, Tensor | None] = {}
-        for beh in BEHAVIOR_TYPES:
-            if beh not in per_beh_users:
-                beh_edges[beh] = _empty2
-                beh_ts[beh] = None
-                continue
-            u_loc = torch.searchsorted(uniq_users, per_beh_users[beh])
-            beh_edges[beh] = torch.stack([u_loc, per_beh_rows[beh]], dim=0)
-            beh_ts[beh] = per_beh_ts[beh]
-
-        e_view, e_cart, e_purchase = (
-            beh_edges["view"], beh_edges["cart"], beh_edges["purchase"]
-        )
-        ts_view, ts_cart, ts_purchase = (
-            beh_ts["view"], beh_ts["cart"], beh_ts["purchase"]
-        )
-        e_rev_view = e_view.flip(0) if e_view.size(1) > 0 else _empty2
-        e_rev_cart = e_cart.flip(0) if e_cart.size(1) > 0 else _empty2
-        e_rev_purchase = e_purchase.flip(0) if e_purchase.size(1) > 0 else _empty2
-
-        # Structural (content) — giong _sample_product_seeds_vectorized.
-        bid = BEHAVIOR_TO_ID["purchase"]
-        origin_flat = torch.full((bsz,), bid, dtype=torch.int8, device=device)
-        inv_p = torch.arange(bsz, device=device, dtype=torch.long)
-        cat_x, cat_b, pc_src, pc_dst, pc_tag, pc_ts = self._process_hop2(
-            product_seeds, prod_b, inv_p, origin_flat, None, "belongs_to", generator,
-        )
-        brand_x, brand_b, pb_src, pb_dst, pb_tag, pb_ts = self._process_hop2(
-            product_seeds, prod_b, inv_p, origin_flat, None, "brand", generator,
-        )
-
-        def _ei(src: Tensor, dst: Tensor) -> Tensor:
-            if src.numel() == 0:
-                return _empty2
-            return torch.stack([src, dst], dim=0)
-
-        def _attr(tag: Tensor) -> Tensor | None:
-            if tag.numel() == 0:
-                return None
-            return tag.view(-1, 1)
-
-        node_data = {
-            "user": (uniq_users, user_b),
-            "product": (prod_x, prod_b),
-            "category": (cat_x, cat_b),
-            "brand": (brand_x, brand_b),
-        }
-        edge_data = {
-            ("user", "view", "product"): (e_view, None, ts_view),
-            ("user", "cart", "product"): (e_cart, None, ts_cart),
-            ("user", "purchase", "product"): (e_purchase, None, ts_purchase),
-            ("product", "rev_view", "user"): (e_rev_view, None, ts_view),
-            ("product", "rev_cart", "user"): (e_rev_cart, None, ts_cart),
-            ("product", "rev_purchase", "user"): (e_rev_purchase, None, ts_purchase),
-            ("product", "belongs_to", "category"): (_ei(pc_src, pc_dst), _attr(pc_tag), pc_ts),
-            ("category", "contains", "product"): (_ei(pc_dst, pc_src), _attr(pc_tag), pc_ts),
-            ("product", "producedBy", "brand"): (_ei(pb_src, pb_dst), _attr(pb_tag), pb_ts),
-            ("brand", "brands", "product"): (_ei(pb_dst, pb_src), _attr(pb_tag), pb_ts),
-        }
         return _pack_hetero_subgraph(device, node_data, edge_data)
 
     def _sample_product_seeds_vectorized(

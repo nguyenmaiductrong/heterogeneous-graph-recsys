@@ -23,7 +23,7 @@ class SplitResult:
     stats: dict = field(default_factory=dict)
     train_end_ts: int | None = None
     val_end_ts: int | None = None
-    protocol_name: str = "all_data_new_purchase_full_ranking"
+    protocol_name: str = "warm_new_purchase_full_ranking"
     candidate_item_idx: np.ndarray | None = None
 
     def summary(self) -> str:
@@ -45,24 +45,13 @@ class SplitResult:
 
 
 class DataSplitter:
-    """Chia dữ liệu theo mốc thời gian (Train < Val < Test) để đánh giá dự đoán
-    các lượt MUA MỚI (New Purchase) — MỘT đường xử lý duy nhất, không phân biệt
-    warm/cold. Mọi user/item (dù có hay không lịch sử mua trong train) đều được
-    đối xử như nhau; việc xử lý node ít/không có lịch sử là trách nhiệm của mô hình
-    (cold slot + content-init), không phải của pipeline.
-
+    """Thực hiện chia dữ liệu theo mốc thời gian (Train < Val < Test) để đánh giá khả năng dự đoán các lượt MUA MỚI (New Purchase) cho tập Warm-start.
     Các quy tắc xử lý cốt lõi:
-    1. Từ vựng inductive (transductive vocab): `user2idx` và `item2idx` được xây
-       dựng trên TOÀN BỘ user/item xuất hiện ở mọi giai đoạn, nên mỗi node có một
-       chỉ mục ổn định và KHÔNG node nào bị loại khỏi Val/Test. Node chỉ xuất hiện
-       ở Val/Test (không có hành vi train) vẫn nhận chỉ mục và nằm trong đánh giá.
-    2. Không rò rỉ nhãn: chỉ hành vi/edge trong cửa sổ train mới đi vào graph; vocab
-       chỉ cấp chỉ mục, không mang thông tin tương lai vào biểu diễn train.
-    3. Quy tắc Mua mới: nếu cặp (User, Item) đã phát sinh hành vi mua ở train, cặp
-       này bị loại khỏi Ground Truth của Val/Test để chỉ tập trung dự đoán món đồ
-       user chưa mua bao giờ.
-    4. Giữ nguyên đa đáp án (Multi-positive): nếu user mua nhiều món mới trong
-       Val/Test, giữ toàn bộ các món đó trong Ground Truth, không gộp/chỉ lấy cuối.
+    1. Giới hạn từ vựng (Vocab): Bộ mã hóa `user2idx` và `item2idx` được xây dựng 100% từ tập Train. Dữ liệu Train không bị tác động ngược lại bởi thông tin từ Val/Test.
+    2. Quy tắc Warm-start: Xóa bỏ các giao dịch trong Val/Test nếu chứa User hoặc Item chưa từng xuất hiện trong giai đoạn Train (bỏ qua nhóm User/Item Cold-start).
+    3. Quy tắc Mua mới: Nếu cặp (User, Item) đã phát sinh hành vi mua ở tập Train, cặp này sẽ bị loại khỏi tập đáp án (Ground Truth) của Val/Test để chỉ tập trung dự đoán các món đồ user chưa mua bao giờ.
+    4. Giữ nguyên đa đáp án (Multi-positive): Nếu user mua nhiều món đồ mới trong giai đoạn Val/Test, giữ lại toàn bộ các món đó trong Ground Truth để đánh giá toàn diện, không gộp lại hay chỉ lấy giao dịch cuối.
+
     """
 
     _REQUIRED = {"user_id", "item_id", "timestamp"}
@@ -79,8 +68,9 @@ class DataSplitter:
         train_end: str,
         val_end: str,
         *,
+        transductive_item_vocab: bool = False,
         drop_repeated_train_purchases_from_eval: bool = True,
-        protocol_name: str = "all_data_new_purchase_full_ranking",
+        protocol_name: str = "warm_new_purchase_full_ranking",
     ) -> SplitResult:
         train_end_ts = int(
             (pd.Timestamp(train_end, tz="UTC") + pd.Timedelta(days=1)).timestamp()
@@ -118,7 +108,7 @@ class DataSplitter:
             "val_end_date": val_end,
             "train_cutoff_ts": train_end_ts,
             "val_cutoff_ts": val_end_ts,
-            "vocab_scope": "inductive_all_nodes",
+            "transductive_item_vocab": transductive_item_vocab,
             "raw_rows_train": len(train_raw),
             "raw_rows_val": len(val_raw),
             "raw_rows_test": len(test_raw),
@@ -130,15 +120,22 @@ class DataSplitter:
             train_raw, val_raw, test_raw, stats,
             train_end_ts=train_end_ts,
             val_end_ts=val_end_ts,
+            transductive_item_vocab=transductive_item_vocab,
             drop_repeated_train_purchases_from_eval=drop_repeated_train_purchases_from_eval,
             protocol_name=protocol_name,
         )
 
-    def _build_mappings(self, all_df: pd.DataFrame) -> tuple[dict, dict]:
-        """Vocab inductive: cấp chỉ mục cho MỌI user/item ở mọi giai đoạn, để node
-        chỉ xuất hiện ở val/test cũng có chỉ mục ổn định và không bị loại."""
-        user2idx = {u: i for i, u in enumerate(sorted(all_df["user_id"].unique()))}
-        item2idx = {it: i for i, it in enumerate(sorted(all_df["item_id"].unique()))}
+    def _build_mappings(
+        self,
+        train_df: pd.DataFrame,
+        all_df: pd.DataFrame | None = None,
+        transductive_item_vocab: bool = False,
+    ) -> tuple[dict, dict]:
+        user2idx = {u: i for i, u in enumerate(sorted(train_df["user_id"].unique()))}
+        if transductive_item_vocab and all_df is not None:
+            item2idx = {it: i for i, it in enumerate(sorted(all_df["item_id"].unique()))}
+        else:
+            item2idx = {it: i for i, it in enumerate(sorted(train_df["item_id"].unique()))}
         return user2idx, item2idx
 
     def _apply_mapping(
@@ -190,22 +187,26 @@ class DataSplitter:
         *,
         train_end_ts: int,
         val_end_ts: int,
+        transductive_item_vocab: bool,
         drop_repeated_train_purchases_from_eval: bool,
         protocol_name: str,
     ) -> SplitResult:
-        # Vocab inductive trên toàn bộ node -> val/test không bao giờ có id ngoài vocab.
-        user2idx, item2idx = self._build_mappings(self._df)
+        all_df = self._df if transductive_item_vocab else None
+        user2idx, item2idx = self._build_mappings(
+            train_raw, all_df=all_df,
+            transductive_item_vocab=transductive_item_vocab,
+        )
 
         train, _, _ = self._apply_mapping(train_raw, user2idx, item2idx, drop_unknown=False)
 
         val_n_in = len(val_raw)
         val, val_cold_users, val_cold_items = self._apply_mapping(
-            val_raw, user2idx, item2idx, drop_unknown=False
+            val_raw, user2idx, item2idx, drop_unknown=True
         )
 
         test_n_in = len(test_raw)
         test, test_cold_users, test_cold_items = self._apply_mapping(
-            test_raw, user2idx, item2idx, drop_unknown=False
+            test_raw, user2idx, item2idx, drop_unknown=True
         )
 
         num_users = len(user2idx)
@@ -225,22 +226,11 @@ class DataSplitter:
             if int(split_df["user_idx"].min()) < 0 or int(split_df["item_idx"].min()) < 0:
                 raise RuntimeError(f"{name}: có chỉ số âm.")
 
-        # Rolling-temporal: lịch sử đã quan sát ở thời điểm dự đoán mỗi split là
-        # MỌI purchase trước split đó. "Mua mới" = item user chưa từng mua trong
-        # lịch sử ấy. => val loại cặp trùng TRAIN; test loại cặp trùng TRAIN ∪ VAL
-        # (item đã mua ở val không còn là mua mới khi dự đoán test).
         val_repeated_dropped = 0
         test_repeated_dropped = 0
-        if drop_repeated_train_purchases_from_eval:
-            train_pairs = (
-                set(zip(train["user_idx"].tolist(), train["item_idx"].tolist()))
-                if not train.empty else set()
-            )
-            # Toàn bộ cặp purchase cửa sổ val (trước khi bỏ train-repeat) — dùng làm
-            # lịch sử bổ sung cho test.
-            val_pairs_all = (
-                set(zip(val["user_idx"].tolist(), val["item_idx"].tolist()))
-                if not val.empty else set()
+        if drop_repeated_train_purchases_from_eval and not train.empty:
+            train_pairs = set(
+                zip(train["user_idx"].tolist(), train["item_idx"].tolist())
             )
             if not val.empty:
                 val_keys = list(zip(val["user_idx"].tolist(), val["item_idx"].tolist()))
@@ -248,15 +238,13 @@ class DataSplitter:
                 val_repeated_dropped = int((~val_keep).sum())
                 val = val.loc[val_keep].reset_index(drop=True)
             if not test.empty:
-                prior_pairs = train_pairs | val_pairs_all
                 test_keys = list(zip(test["user_idx"].tolist(), test["item_idx"].tolist()))
-                test_keep = np.array([k not in prior_pairs for k in test_keys])
+                test_keep = np.array([k not in train_pairs for k in test_keys])
                 test_repeated_dropped = int((~test_keep).sum())
                 test = test.loc[test_keep].reset_index(drop=True)
             if val_repeated_dropped or test_repeated_dropped:
                 logger.info(
-                    "Bỏ cặp purchase đã có trong lịch sử khỏi eval (rolling): "
-                    "val bỏ train-repeat=%d, test bỏ (train∪val)-repeat=%d",
+                    "Đã bỏ các cặp purchase trùng train khỏi eval: val=%d test=%d",
                     val_repeated_dropped, test_repeated_dropped,
                 )
 
@@ -276,7 +264,7 @@ class DataSplitter:
             "test_cold_users_dropped": test_cold_users,
             "test_cold_items_dropped": test_cold_items,
             "val_repeated_train_purchase_dropped": val_repeated_dropped,
-            "test_repeated_trainval_purchase_dropped": test_repeated_dropped,
+            "test_repeated_train_purchase_dropped": test_repeated_dropped,
             "val_rows_in": val_n_in,
             "test_rows_in": test_n_in,
             "val_rows_final": len(val),

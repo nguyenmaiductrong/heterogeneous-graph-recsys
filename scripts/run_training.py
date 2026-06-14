@@ -16,9 +16,6 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Giam phan manh allocator CUDA; phai set truoc khi torch khoi tao CUDA context.
-os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
-
 import numpy as np
 import pandas as pd
 import torch
@@ -42,19 +39,18 @@ def load_config(config_path: str) -> dict:
         return yaml.safe_load(f)
 
 
-def build_hetero_data(cfg: dict, edge_window: str = "train") -> tuple[HeteroData, dict, dict]:
+def build_hetero_data(cfg: dict, split: str = "train") -> tuple[HeteroData, dict, dict, dict]:
     """Build HeteroData from config paths.
 
-    edge_window: "train" (mặc định) dùng cạnh hành vi cửa sổ train (< train_cutoff) —
-        dùng cho training và val eval. "trainval" dùng cạnh < val_cutoff (train+val) —
-        dùng cho đánh giá rolling-temporal của test (khi dự đoán test, lịch sử quan
-        sát được gồm cả val).
+    split="train": graph uses train-only behavior edges (for training / val eval).
+    split="test":  graph uses train+val (``*_trainval_*``) behavior edges so the
+                   test split can attend over everything seen before test.
+    Returns (hetero, node_counts, behavior_data, content) where ``content`` holds
+    per-product category/brand index maps for content-grounded cold-start.
     """
-    if edge_window not in ("train", "trainval"):
-        raise ValueError(f"edge_window phải là 'train' hoặc 'trainval', nhận {edge_window!r}")
-    edge_prefix = "train" if edge_window == "train" else "trainval"
     data_dir = Path(cfg["data"]["data_dir"])
     struct_dir = Path(cfg["data"]["struct_dir"])
+    edge_prefix = "trainval" if split == "test" else "train"
 
     node_counts_path = data_dir / "node_counts.json"
     if node_counts_path.exists():
@@ -75,13 +71,6 @@ def build_hetero_data(cfg: dict, edge_window: str = "train") -> tuple[HeteroData
     def load_npy(prefix, suffix):
         return np.load(data_dir / f"{prefix}_{suffix}.npy")
 
-    if edge_window == "trainval" and not (data_dir / "purchase_trainval_src.npy").exists():
-        raise FileNotFoundError(
-            f"edge_window='trainval' nhưng không thấy {data_dir}/*_trainval_*.npy. "
-            "Chạy lại scripts/prepare_data.py (bản mới) để sinh cạnh train+val cho "
-            "đánh giá rolling-temporal của test."
-        )
-
     behavior_data = {}
     for beh in ["view", "cart", "purchase"]:
         src = load_npy(f"{beh}_{edge_prefix}", "src")
@@ -94,6 +83,18 @@ def build_hetero_data(cfg: dict, edge_window: str = "train") -> tuple[HeteroData
     prod_brand = pd.read_parquet(struct_dir / "product_brand.parquet")
     logger.info(f"Product-Category edges: {len(prod_cat):,}")
     logger.info(f"Product-Brand edges: {len(prod_brand):,}")
+
+    # Per-product category/brand index maps (one each per product). Used both
+    # for the content-grounded embedding and as structural graph edges below.
+    product_category = torch.zeros(n_items, dtype=torch.long)
+    product_category[torch.from_numpy(prod_cat["product_idx"].to_numpy()).long()] = (
+        torch.from_numpy(prod_cat["category_idx"].to_numpy()).long()
+    )
+    product_brand = torch.zeros(n_items, dtype=torch.long)
+    product_brand[torch.from_numpy(prod_brand["product_idx"].to_numpy()).long()] = (
+        torch.from_numpy(prod_brand["brand_idx"].to_numpy()).long()
+    )
+    content = {"product_category": product_category, "product_brand": product_brand}
 
     hetero = HeteroData()
 
@@ -125,7 +126,7 @@ def build_hetero_data(cfg: dict, edge_window: str = "train") -> tuple[HeteroData
     hetero[("brand", "brands", "product")].edge_index = brand_ei.flip(0)
 
     logger.info(f"HeteroData built: {hetero}")
-    return hetero, node_counts, behavior_data
+    return hetero, node_counts, behavior_data, content
 
 
 def build_train_triplets(behavior_data: dict, max_view: int = -1) -> torch.Tensor:
@@ -170,7 +171,7 @@ def main():
     if torch.cuda.is_available():
         logger.info(f"GPU: {torch.cuda.get_device_name(0)}")
 
-    hetero, node_counts, behavior_data = build_hetero_data(cfg)
+    hetero, node_counts, behavior_data, content = build_hetero_data(cfg)
 
     # Sanity: HeteroData edge dtypes / bounds / contiguity.
     # Skip leakage check here (needs val_gt), repeated below after we have it.
@@ -269,6 +270,7 @@ def main():
     logger.info(f"Using device: {device}")
 
     model_cfg = cfg["model"]
+    cold_cfg = cfg.get("cold_start", {})
     model = BPATMPModel(
         num_nodes_dict=node_counts,
         embed_dim=model_cfg["embed_dim"],
@@ -277,8 +279,25 @@ def main():
         n_intents=model_cfg.get("n_intents", 32),
         rank=model_cfg.get("rank", 32),
         use_grad_checkpoint=model_cfg.get("use_grad_checkpoint", False),
+        product_category=content["product_category"],
+        product_brand=content["product_brand"],
+        content_item=cold_cfg.get("content_item", False),
+        content_scale_init=cold_cfg.get("content_scale_init", 0.5),
+        p_id=cold_cfg.get("p_id", 0.0),
     )
-    logger.info(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
+    logger.info(
+        f"Model parameters: {sum(p.numel() for p in model.parameters()):,} "
+        f"| content_item={model.content_item} p_id={model.p_id}"
+    )
+
+    # Cold-start eval breakdown: per-node cold flags (no purchase history in train).
+    user_is_cold = None
+    user_is_cold_path = data_dir / "user_is_cold.npy"
+    if user_is_cold_path.exists():
+        user_is_cold = torch.from_numpy(np.load(user_is_cold_path)).bool()
+        logger.info(
+            f"Loaded user_is_cold: {int(user_is_cold.sum()):,} cold / {user_is_cold.numel():,}"
+        )
 
     sampler_cfg = cfg.get("sampler", {})
     from src.graph.neighbor_sampler import NeighborSamplerConfig
@@ -297,32 +316,6 @@ def main():
     eval_ref_time = float(train_triplets[:, 3].max().item())
     logger.info(f"Eval reference time: {eval_ref_time}")
 
-    # Cold-start masks (giao thuc inductive) — optional. User mask vừa dùng để
-    # phân nhóm metric, vừa dùng cold slot khi export embedding eval.
-    user_is_cold = None
-    item_is_cold = None
-    user_cold_path = data_dir / "user_is_cold.npy"
-    item_cold_path = data_dir / "item_is_cold.npy"
-    if user_cold_path.exists():
-        user_is_cold = torch.from_numpy(np.load(user_cold_path)).bool()
-        logger.info(
-            "Loaded cold mask: cold_user=%d/%d",
-            int(user_is_cold.sum()), user_is_cold.numel(),
-        )
-        if train_cfg.cold_lambda <= 0:
-            logger.warning(
-                "Co cold masks nhung cold_lambda=0 -> model KHONG train cold-robust. "
-                "Dat config 'cold.lambda_cold' > 0 de bat distillation."
-            )
-    else:
-        logger.info("Khong tim thay cold masks — eval khong phan nhom cold/warm.")
-    if item_cold_path.exists():
-        item_is_cold = torch.from_numpy(np.load(item_cold_path)).bool()
-        logger.info(
-            "Loaded cold mask: cold_item=%d/%d",
-            int(item_is_cold.sum()), item_is_cold.numel(),
-        )
-
     train(
         model=model,
         sampler=sampler,
@@ -337,7 +330,7 @@ def main():
         device=device,
         eval_ref_time=eval_ref_time,
         user_is_cold=user_is_cold,
-        item_is_cold=item_is_cold,
+        p_hist=float(cold_cfg.get("p_hist", 0.0)),
     )
 
 

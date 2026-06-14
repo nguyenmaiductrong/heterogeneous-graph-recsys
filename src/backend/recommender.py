@@ -247,11 +247,7 @@ def recommend(
                 },
                 {
                     "name": "Read embedding tables",
-                    "detail": (
-                        f"source={getattr(model, 'embedding_source', 'unknown')} | "
-                        f"user={model.n_users} x {model.user.size(1)}, "
-                        f"product={model.n_products} x {model.product.size(1)}"
-                    ),
+                    "detail": f"user={model.n_users} x {model.user.size(1)}, product={model.n_products} x {model.product.size(1)}",
                 },
                 {
                     "name": "Build query embedding",

@@ -34,24 +34,13 @@ class TemporalSplitEvaluator:
         eval_input: EvalInput,
         user_batch: int = 512,
         item_tile: int = 16384,
-        user_segment: "torch.Tensor | None" = None,
     ) -> dict[str, float]:
-        """Tiled full-rank scoring. Peak VRAM ~ O(user_batch * item_tile).
-
-        user_segment: optional bool [n_eval] cung thu tu eval_user_ids — True = cold-user.
-            Khi co, bo sung metric warm_user/* va cold_user/*.
-        Metric tong the (HR@k, NDCG@k) giu nguyen — segment chi la bo sung.
-        """
+        """Tiled full-rank scoring. Peak VRAM ~ O(user_batch * item_tile)."""
         eval_input.validate()
         n_eval = eval_input.eval_user_ids.size(0)
         n_items = eval_input.item_embeddings.size(0)
         device = self.device
 
-        seg = user_segment.to(device).bool() if user_segment is not None else None
-        if seg is not None and seg.numel() != n_eval:
-            raise ValueError(
-                f"user_segment len {seg.numel()} != n_eval {n_eval}"
-            )
         dtype = torch.float16 if device.type == "cuda" else torch.float32
         item_embs = eval_input.item_embeddings.to(device=device, dtype=dtype)
 
@@ -83,16 +72,6 @@ class TemporalSplitEvaluator:
         for k in self.ks:
             sums[f"HR@{k}"] = 0.0
             sums[f"NDCG@{k}"] = 0.0
-
-        # segment accumulators
-        seg_sums: dict[str, float] = {}
-        if seg is not None:
-            for pref in ("warm_user", "cold_user"):
-                for k in self.ks:
-                    seg_sums[f"{pref}/HR@{k}"] = 0.0
-                    seg_sums[f"{pref}/NDCG@{k}"] = 0.0
-            n_cold_user = int(seg.sum().item())
-            n_warm_user = n_eval - n_cold_user
 
         for u_start in range(0, n_eval, user_batch):
             u_end = min(u_start + user_batch, n_eval)
@@ -128,11 +107,8 @@ class TemporalSplitEvaluator:
             batch_gt = gt_padded[u_start:u_end]
             batch_counts = gt_counts[u_start:u_end]
             hits = (top_idx.unsqueeze(-1) == batch_gt.unsqueeze(1)).any(dim=-1)
-
-            seg_b = seg[u_start:u_end] if seg is not None else None
-
             for k in self.ks:
-                hr_u = hits[:, :k].any(dim=-1).float()  # [B]
+                sums[f"HR@{k}"] += hits[:, :k].any(dim=-1).float().sum().item()
                 dcg = (hits[:, :k].float() * ndcg_w[:k]).sum(dim=-1)
                 ideal_len = torch.minimum(
                     batch_counts,
@@ -143,17 +119,7 @@ class TemporalSplitEvaluator:
                     mask = ideal_len == ideal_k
                     if int(ideal_k.item()) > 0:
                         idcg[mask] = ndcg_w[: int(ideal_k.item())].sum()
-                ndcg_u = dcg / idcg.clamp_min(1e-12)  # [B]
-
-                sums[f"HR@{k}"] += hr_u.sum().item()
-                sums[f"NDCG@{k}"] += ndcg_u.sum().item()
-
-                if seg_b is not None:
-                    sums_warm_mask = ~seg_b
-                    seg_sums[f"cold_user/HR@{k}"] += hr_u[seg_b].sum().item()
-                    seg_sums[f"cold_user/NDCG@{k}"] += ndcg_u[seg_b].sum().item()
-                    seg_sums[f"warm_user/HR@{k}"] += hr_u[sums_warm_mask].sum().item()
-                    seg_sums[f"warm_user/NDCG@{k}"] += ndcg_u[sums_warm_mask].sum().item()
+                sums[f"NDCG@{k}"] += (dcg / idcg.clamp_min(1e-12)).sum().item()
 
             del u_emb, top_vals, top_idx, hits
 
@@ -162,38 +128,20 @@ class TemporalSplitEvaluator:
         if device.type == "cuda":
             torch.cuda.empty_cache()
 
-        out = {k: v / n_eval for k, v in sums.items()}
-
-        if seg is not None:
-            for k in self.ks:
-                if n_cold_user > 0:
-                    out[f"cold_user/HR@{k}"] = seg_sums[f"cold_user/HR@{k}"] / n_cold_user
-                    out[f"cold_user/NDCG@{k}"] = seg_sums[f"cold_user/NDCG@{k}"] / n_cold_user
-                if n_warm_user > 0:
-                    out[f"warm_user/HR@{k}"] = seg_sums[f"warm_user/HR@{k}"] / n_warm_user
-                    out[f"warm_user/NDCG@{k}"] = seg_sums[f"warm_user/NDCG@{k}"] / n_warm_user
-            out["cold_user/n"] = float(n_cold_user)
-            out["warm_user/n"] = float(n_warm_user)
-
-        return out
+        return {k: v / n_eval for k, v in sums.items()}
 
     def evaluate(
         self,
         eval_input: EvalInput,
         batch_size: int = 512,
         mode: str | None = None,
-        user_segment: "torch.Tensor | None" = None,
     ) -> dict[str, float]:
         if mode is not None and mode not in ("full", "full_tiled"):
             logger.warning(
                 "evaluator.evaluate(mode=%r) is ignored — only full-rank is supported.",
                 mode,
             )
-        return self.evaluate_full_ranking_tiled(
-            eval_input,
-            user_batch=batch_size,
-            user_segment=user_segment,
-        )
+        return self.evaluate_full_ranking_tiled(eval_input, user_batch=batch_size)
 
 
 FullRankingEvaluator = TemporalSplitEvaluator

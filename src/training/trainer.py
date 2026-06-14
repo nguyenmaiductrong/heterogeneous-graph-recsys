@@ -7,66 +7,18 @@ from pathlib import Path
 
 import torch
 import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader, Sampler
+from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 
 from src.model.bpatmp import BPATMPModel
 from src.core.contracts import BEHAVIOR_TYPES, EvalInput
 from src.graph.neighbor_sampler import BehaviorAwareNeighborSampler
 from src.training.losses import (
-    BPATMPLoss,
+    BPATMPTotalLoss,
     bpr_loss,
     build_user_history_csr,
-    cold_consistency_loss,
     sample_aligned_negatives_local,
 )
-
-_BEHAVIOR_EDGE_NAMES = {"view", "cart", "purchase"}
-_REV_BEHAVIOR_EDGE_NAMES = {"rev_view", "rev_cart", "rev_purchase"}
-
-
-def _make_cold_subgraph(
-    subgraph,
-    p_hist: float,
-    generator: torch.Generator | None,
-    drop_user: torch.Tensor | None = None,
-):
-    """Tao ban sao subgraph mo phong cold: xoa toan bo behavior edge cua mot tap
-    seed user ngau nhien (p_hist) -> ho thanh few/zero-shot. CHI xoa edge, GIU NGUYEN
-    node .x nen searchsorted/CSR/align voi forward warm khong lech (R2). Lam ngoai
-    grad-checkpoint nen khong dinh hazard recompute (R3). Structural edge giu nguyen.
-
-    drop_user: bool [n_user] — tap user bi xoa edge do caller chon san (de dong bo
-    voi cold_mask cold-slot, mo phong TRUE-cold). None = tu sample theo p_hist.
-    """
-    sub = subgraph.clone()
-    device = sub["user"].x.device
-    n_user = sub["user"].x.size(0)
-    if n_user == 0:
-        return sub
-    if drop_user is None:
-        if p_hist <= 0:
-            return sub
-        drop_user = torch.rand(n_user, device=device, generator=generator) < p_hist
-    if not drop_user.any():
-        return sub
-    drop_idx = drop_user.nonzero(as_tuple=True)[0]
-    for et in list(sub.edge_types):
-        _, name, _ = et
-        ei = sub[et].edge_index
-        if name in _BEHAVIOR_EDGE_NAMES:
-            keep = ~torch.isin(ei[0], drop_idx)
-        elif name in _REV_BEHAVIOR_EDGE_NAMES:
-            keep = ~torch.isin(ei[1], drop_idx)
-        else:
-            continue
-        sub[et].edge_index = ei[:, keep]
-        for attr in ("edge_ts", "ts", "edge_attr"):
-            if hasattr(sub[et], attr):
-                val = getattr(sub[et], attr)
-                if val is not None and val.size(0) == keep.size(0):
-                    setattr(sub[et], attr, val[keep])
-    return sub
 from src.core.evaluator import TemporalSplitEvaluator
 
 logger = logging.getLogger(__name__)
@@ -120,33 +72,29 @@ class TrainConfig:
     wandb_artifact_name: str = "bpatmp-checkpoint"
     wandb_save_every: int = 5
 
-    # Loss: L_total = L_BPR + lambda_cl * L_InfoNCE(view, purchase)
-    cl_weight: float = 0.1   # lambda_cl
-    cl_tau: float = 0.1      # InfoNCE temperature
-    bpr_alpha: float = 0.5   # exponent in w_b = (N_p / N_b) ** alpha
+    # Loss: L_total = L_BPR + lambda_cl*L_CL + lambda_conv*L_conv + lambda_mono*L_mono + lambda_wd*||theta||^2
+    cl_weight: float = 0.1  # lambda_cl
+    lambda_conv: float = 0.0  # lambda_conv (funnel prior; 0 = disabled)
+    lambda_mono: float = 0.0  # lambda_mono (monotonic decay prior; 0 = disabled)
+    funnel_margin: float = 0.1
+    bpr_alpha: float = 0.5  # exponent in w_b = (N_p / N_b) ** alpha
     bpr_w_min: float = 0.05  # floor for w_b
-    cl_every_k: int = 1      # 1 = every step, K>1 = run CL every K steps
+    cl_every_k: int = 1  # 1 = every step, K>1 = run CL every K steps
     use_bf16: bool = True
     max_view_triplets: int = -1
-
-    # Negative sampling (xem sample_aligned_negatives_local)
-    neg_frac_hard: float = 0.5   # ty le hard neg trong num_neg
-    neg_hard_pool: int = 200     # pool top-rank de sample hard neg
-    neg_skip_top: int = 0        # bo `skip_top` rank dau khoi pool (giam false negative)
-
-    # Cold-robust training (chi kich hoat khi lambda_cold > 0 hoac cold_bpr_lambda > 0)
-    cold_p_id: float = 0.15       # xac suat thay self-embedding seed bang cold slot
-    cold_p_hist: float = 0.30     # xac suat "cold-out" mot seed user (xoa behavior edge)
-    cold_lambda: float = 0.0      # trong so distillation L_cold (0 = tat, train nhu cu)
-    cold_bpr_lambda: float = 0.0  # trong so BPR tren forward cold (toi uu truc tiep ranking cold)
-    cold_every_k: int = 2         # chay forward cold moi K step
-    cold_slot_ema_decay: float = 0.0  # EMA cold-slot luc eval (0=tat). ~0.9 lam cold het dao dong
 
     # Evaluation
     eval_subsample: int = 10000
     eval_seed: int = 42
     eval_ks: list[int] = field(default_factory=lambda: [1, 5, 10, 20, 50])
     primary_metric: str = "NDCG@20"
+
+    # Hierarchical CL
+    hierarchy_cl_enabled: bool = True
+    hierarchy_cl_tau: float = 0.1
+    hierarchy_cl_hard_k: int = 32
+    hierarchy_cl_min_pair_overlap: int = 4
+    hierarchy_cl_pair_weights: list[tuple[str, str, float]] | None = None
 
     # A100 Optimizations
     gradient_accumulation: int = 1
@@ -161,8 +109,6 @@ class TrainConfig:
     prefetch_factor: int = 2
     log_every: int = 50
     empty_cache_freq: int = 0
-    progress_bar: bool = True
-    quiet_checkpoint_logs: bool = False
 
     @classmethod
     def from_yaml(cls, cfg: dict) -> "TrainConfig":
@@ -170,12 +116,14 @@ class TrainConfig:
         loss = cfg.get("loss", {})
         w = cfg.get("wandb", {})
         e = cfg.get("evaluation", {})
+        hcl = cfg.get("hierarchy_cl", {})
         a100 = cfg.get("a100", {})
-        # `low_history` la ten moi; giu fallback `cold` cho config/checkpoint cu.
-        cold = cfg.get("low_history", cfg.get("cold", {}))
 
         eval_ks = e.get("ks", [1, 5, 10, 20, 50])
         primary_metric = str(e.get("primary_metric", cls.primary_metric))
+        pair_weights = hcl.get("pair_weights", None)
+        if pair_weights is not None:
+            pair_weights = [(str(a), str(b), float(c)) for a, b, c in pair_weights]
 
         return cls(
             # Basic training
@@ -205,33 +153,29 @@ class TrainConfig:
 
             # Loss
             cl_weight=loss.get("lambda_cl", t.get("cl_weight", cls.cl_weight)),
-            cl_tau=float(loss.get("tau", cls.cl_tau)),
+            lambda_conv=loss.get("lambda_conv", cls.lambda_conv),
+            lambda_mono=loss.get("lambda_mono", cls.lambda_mono),
+            funnel_margin=loss.get("funnel_margin", cls.funnel_margin),
             bpr_alpha=loss.get("alpha", cls.bpr_alpha),
             bpr_w_min=loss.get("w_min", cls.bpr_w_min),
             cl_every_k=int(t.get("cl_every_k", a100.get("cl_every_k", cls.cl_every_k))),
             use_bf16=t.get("use_bf16", cls.use_bf16),
             max_view_triplets=t.get("max_view_triplets", cls.max_view_triplets),
 
-            # Negative sampling
-            neg_frac_hard=float(t.get("neg_frac_hard", cls.neg_frac_hard)),
-            neg_hard_pool=int(t.get("neg_hard_pool", cls.neg_hard_pool)),
-            neg_skip_top=int(t.get("neg_skip_top", cls.neg_skip_top)),
-
-            # Cold-robust training
-            cold_p_id=float(cold.get("p_id", cls.cold_p_id)),
-            cold_p_hist=float(cold.get("p_hist", cls.cold_p_hist)),
-            cold_lambda=float(cold.get("lambda_cold", cls.cold_lambda)),
-            cold_bpr_lambda=float(cold.get("lambda_bpr", cls.cold_bpr_lambda)),
-            cold_every_k=int(cold.get("cold_every_k", cls.cold_every_k)),
-            cold_slot_ema_decay=float(
-                cold.get("slot_ema_decay", cls.cold_slot_ema_decay)
-            ),
-
             # Evaluation
             eval_subsample=t.get("eval_subsample", cls.eval_subsample),
             eval_seed=t.get("eval_seed", cls.eval_seed),
             eval_ks=list(eval_ks),
             primary_metric=primary_metric,
+
+            # Hierarchical CL
+            hierarchy_cl_enabled=bool(hcl.get("enabled", cls.hierarchy_cl_enabled)),
+            hierarchy_cl_tau=float(hcl.get("tau", cls.hierarchy_cl_tau)),
+            hierarchy_cl_hard_k=int(hcl.get("hard_k", cls.hierarchy_cl_hard_k)),
+            hierarchy_cl_min_pair_overlap=int(
+                hcl.get("min_pair_overlap", cls.hierarchy_cl_min_pair_overlap)
+            ),
+            hierarchy_cl_pair_weights=pair_weights,
 
             # A100 Optimizations
             gradient_accumulation=t.get("gradient_accumulation", cls.gradient_accumulation),
@@ -246,8 +190,6 @@ class TrainConfig:
             prefetch_factor=t.get("prefetch_factor", cls.prefetch_factor),
             log_every=w.get("log_every", cls.log_every),
             empty_cache_freq=a100.get("empty_cache_freq", cls.empty_cache_freq),
-            progress_bar=bool(t.get("progress_bar", cls.progress_bar)),
-            quiet_checkpoint_logs=bool(t.get("quiet_checkpoint_logs", cls.quiet_checkpoint_logs)),
         )
 
 
@@ -264,19 +206,18 @@ def _save_checkpoint(
     scaler: torch.amp.GradScaler,
     loss: float,
     metrics: dict,
-    scheduler: torch.optim.lr_scheduler._LRScheduler | None = None,
 ) -> None:
-    state = {
-        "epoch": epoch,
-        "model_state_dict": model.state_dict(),
-        "optimizer_state_dict": optimizer.state_dict(),
-        "scaler_state_dict": scaler.state_dict(),
-        "loss": loss,
-        "metrics": metrics,
-    }
-    if scheduler is not None:
-        state["scheduler_state_dict"] = scheduler.state_dict()
-    torch.save(state, save_dir / f"epoch_{epoch:03d}.pt")
+    torch.save(
+        {
+            "epoch": epoch,
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "scaler_state_dict": scaler.state_dict(),
+            "loss": loss,
+            "metrics": metrics,
+        },
+        save_dir / f"epoch_{epoch:03d}.pt",
+    )
 
 
 def _load_checkpoint(
@@ -285,18 +226,9 @@ def _load_checkpoint(
     optimizer: torch.optim.Optimizer,
     scaler: torch.amp.GradScaler,
     device: torch.device,
-    scheduler: torch.optim.lr_scheduler._LRScheduler | None = None,
 ) -> int:
     ckpt = torch.load(ckpt_path, map_location=device)
-    try:
-        model.load_state_dict(ckpt["model_state_dict"])
-    except RuntimeError as exc:
-        # R5: cold-slot doi kich thuoc bang embedding (+1) -> checkpoint cu khong khop.
-        logger.warning(
-            "Checkpoint %s khong tuong thich model hien tai (%s). Bo qua resume, train tu dau.",
-            ckpt_path, exc,
-        )
-        return 0
+    model.load_state_dict(ckpt["model_state_dict"])
     try:
         optimizer.load_state_dict(ckpt["optimizer_state_dict"])
         scaler.load_state_dict(ckpt["scaler_state_dict"])
@@ -304,11 +236,6 @@ def _load_checkpoint(
         logger.warning(
             "Optimizer/scaler state incompatible with checkpoint — starting with fresh optimizer state."
         )
-    if scheduler is not None and "scheduler_state_dict" in ckpt:
-        try:
-            scheduler.load_state_dict(ckpt["scheduler_state_dict"])
-        except (ValueError, KeyError, RuntimeError):
-            logger.warning("Scheduler state incompatible — will fast-forward instead.")
     resumed_epoch = int(ckpt["epoch"])
     logger.info(
         "Resumed from %s (epoch %d, loss=%.4f)",
@@ -331,71 +258,23 @@ class InteractionDataset(Dataset):
         return self.triplets[idx]
 
 
-class TemporalBatchSampler(Sampler):
-    """Chia triplet DA SORT theo ts thanh cac chunk lien tuc; moi epoch xao tron
-    THU TU chunk (noi dung chunk giu nguyen lat thoi gian).
+def _extract_per_behavior_lambdas(model: BPATMPModel) -> dict[str, torch.Tensor]:
+    """Mean across encoder layers of softplus(raw_lambda) per behavior.
 
-    Voi i.i.d. shuffle, min(batch_ts) ~ dau train window nen filter nhan qua
-    `t_e < ref_time` trong model drop ~100% behavior edge luc train (eval lai giu
-    het -> train/eval mismatch). Batch theo lat thoi gian giu ref_time sat thoi
-    diem cua batch: lich su TRUOC lat van di qua filter, leakage-free khong doi.
+    Used by MonotonicDecayPriorLoss; returns a 1-element scalar tensor per
+    behavior so the prior can compute relu(lam_strong - lam_weak) ** 2.
     """
-
-    def __init__(
-        self,
-        n: int,
-        batch_size: int,
-        generator: torch.Generator | None = None,
-        drop_last: bool = True,
-    ) -> None:
-        self.n = n
-        self.batch_size = batch_size
-        self.generator = generator
-        n_full, rem = divmod(n, batch_size)
-        self.n_batches = n_full if (drop_last or rem == 0) else n_full + 1
-
-    def __len__(self) -> int:
-        return self.n_batches
-
-    def __iter__(self):
-        for b in torch.randperm(self.n_batches, generator=self.generator).tolist():
-            start = b * self.batch_size
-            yield list(range(start, min(start + self.batch_size, self.n)))
+    base = model._orig_mod if hasattr(model, "_orig_mod") else model  # torch.compile unwrap
+    convs = base.encoder.convs
+    stacked = torch.stack(
+        [F.softplus(c.temporal_attn.raw_lambda) for c in convs], dim=0
+    )  # (n_layers, 3)
+    means = stacked.mean(dim=0)  # (3,)
+    return {beh: means[i] for i, beh in enumerate(BEHAVIOR_TYPES)}
 
 
 def _format_main_metrics(metrics: dict[str, float]) -> str:
     return " | ".join(f"{k}={v:.4f}" for k, v in metrics.items())
-
-
-def _log_val_metrics(label: str, metrics: dict[str, float]) -> None:
-    """In val metrics thanh NHIEU dong (overall / cold_user / warm_user).
-
-    Gop het vao mot dong (~30 metric) lam console/Colab cat giua dong nen
-    HR/NDCG@1,@5 cua tung phan khuc khong doc duoc — tach dong de thay du moi k.
-    """
-    overall = {k: v for k, v in metrics.items() if "/" not in k}
-    logger.info("%s | %s", label, _format_main_metrics(overall))
-    for pref in ("cold_user", "warm_user"):
-        seg = {
-            k.split("/", 1)[1]: v
-            for k, v in metrics.items()
-            if k.startswith(pref + "/") and k != f"{pref}/n"
-        }
-        if seg:
-            n = int(metrics.get(f"{pref}/n", 0))
-            logger.info("%s | %s (n=%d) | %s", label, pref, n, _format_main_metrics(seg))
-
-
-def _best_summary(
-    best_tracks: dict[str, str],
-    best_vals: dict[str, float],
-    best_epochs: dict[str, int],
-) -> str:
-    return ", ".join(
-        f"{best_tracks[t]}={best_vals[t]:.4f} (epoch {best_epochs[t]})"
-        for t in best_tracks
-        if best_epochs[t] >= 0
-    )
 
 
 def _make_generator(device: torch.device, seed: int | None) -> torch.Generator | None:
@@ -416,12 +295,45 @@ def _make_generator(device: torch.device, seed: int | None) -> torch.Generator |
     return gen
 
 
+_BEHAVIOR_REL_NAMES = {
+    "view", "cart", "purchase", "rev_view", "rev_cart", "rev_purchase",
+}
+
+
+def _drop_behavior_edges(subgraph, p_hist: float):
+    """Cold-user simulation (history dropout): randomly drop a fraction p_hist of
+    behavior (user<->product) edges in the sampled subgraph during training so the
+    learned embeddings stay robust when a user's history is sparse — the exact
+    situation a cold user is in. Structural category/brand edges are kept intact.
+    Per-edge attributes (edge_ts / edge_attr) are dropped in sync with edge_index.
+    """
+    if p_hist <= 0:
+        return subgraph
+    for et in subgraph.edge_types:
+        if et[1] not in _BEHAVIOR_REL_NAMES:
+            continue
+        store = subgraph[et]
+        ei = getattr(store, "edge_index", None)
+        if ei is None or ei.numel() == 0:
+            continue
+        E = ei.size(1)
+        keep = torch.rand(E, device=ei.device) >= p_hist
+        if bool(keep.all()):
+            continue
+        store.edge_index = ei[:, keep]
+        for attr in ("edge_ts", "ts", "edge_time", "edge_attr"):
+            val = getattr(store, attr, None)
+            if val is not None and val.numel() == E:
+                setattr(store, attr, val[keep])
+    return subgraph
+
+
 def train_epoch(
     model: BPATMPModel,
     sampler: BehaviorAwareNeighborSampler,
     dataloader: DataLoader,
     optimizer: torch.optim.Optimizer,
-    loss_fn: BPATMPLoss,
+    loss_fn: BPATMPTotalLoss,
     scaler: torch.amp.GradScaler,
     device: torch.device,
     num_neg: int = 1,
@@ -431,49 +343,37 @@ def train_epoch(
     cl_every_k: int = 1,
     history_ptr: torch.Tensor | None = None,
     history_item: torch.Tensor | None = None,
+    pop_dist: torch.Tensor | None = None,
     scheduler: torch.optim.lr_scheduler._LRScheduler | None = None,
     generator: torch.Generator | None = None,
-    cold_p_id: float = 0.0,
-    cold_p_hist: float = 0.0,
-    cold_lambda: float = 0.0,
-    cold_bpr_lambda: float = 0.0,
-    cold_every_k: int = 2,
-    neg_frac_hard: float = 0.5,
-    neg_hard_pool: int = 200,
-    neg_skip_top: int = 0,
-    progress_bar: bool = True,
+    p_hist: float = 0.0,
 ) -> dict[str, float]:
     model.train()
     total_loss = 0.0
     total_cl_loss = 0.0
-    total_cold_loss = 0.0
-    total_cold_bpr_loss = 0.0
-    n_cold_steps = 0
     n_steps = 0
-    cold_on = (cold_lambda > 0.0 or cold_bpr_lambda > 0.0) and (
-        cold_p_id > 0.0 or cold_p_hist > 0.0
-    )
     n_skipped = 0  # batches dropped because no positive items found in subgraph
     purchase_id = BEHAVIOR_TYPES.index("purchase")
 
-    pbar = tqdm(dataloader, desc="train", leave=False, dynamic_ncols=True, disable=not progress_bar)
+    pbar = tqdm(dataloader, desc="train", leave=False, dynamic_ncols=True)
     for step, raw_batch in enumerate(pbar):
         raw_batch = raw_batch.to(device)
         users_g = raw_batch[:, 0]
         items_g = raw_batch[:, 1]
         beh_ids = raw_batch[:, 2]
 
-        # ref_time = batch_min: moi edge giu lai co t_e < min(batch_ts) <= t_pos cho
-        # MOI positive trong batch -> khong leakage. Batch la lat thoi gian lien tuc
-        # (TemporalBatchSampler) nen batch_min nam sat dau lat: lich su TRUOC lat
-        # song sot qua filter `t_e < ref_time` cua model. Positive chi mat context
-        # ben trong lat (~1/n_batches cua window) — khong dang ke.
+        # ref_time = batch_min: every t_e < min(batch_ts) <= t_pos for ALL positives
+        # in the batch, so no future leakage. Tradeoff: late-batch positives lose
+        # access to recent context within (min, t_pos). Mitigated by large
+        # batch_size + i.i.d. shuffling so distribution is balanced.
         ref_time = float(raw_batch[:, 3].min().item()) if raw_batch.size(1) >= 4 else None
 
         unique_users = users_g.unique()
         subgraph = sampler.sample(
             unique_users, seed_type="user", generator=generator
         ).to(device, non_blocking=True)
+        if p_hist > 0:
+            subgraph = _drop_behavior_edges(subgraph, p_hist)
 
         optimizer.zero_grad(set_to_none=True)
 
@@ -522,20 +422,18 @@ def train_epoch(
                 u_emb_b = user_emb[u_b]
                 pos_emb_b = item_emb[pp_b]
 
-                if history_ptr is not None and history_item is not None:
+                if history_ptr is not None and history_item is not None and pop_dist is not None:
                     neg_loc = sample_aligned_negatives_local(
                         pp_b=pp_b,
                         user_b_global=users_g_kept[mask],
                         N_items=N_items,
                         num_neg=num_neg,
                         prod_x=subgraph["product"].x,
+                        pop_dist_global=pop_dist,
                         history_ptr=history_ptr,
                         history_item=history_item,
                         user_emb_b=u_emb_b.detach(),
                         item_emb_local=item_emb.detach(),
-                        frac_hard=neg_frac_hard,
-                        hard_pool=neg_hard_pool,
-                        skip_top=neg_skip_top,
                         generator=generator,
                     )
                 else:
@@ -551,28 +449,43 @@ def train_epoch(
 
             users_per_beh = {b: u_loc[bev == bid].unique() for bid, b in enumerate(BEHAVIOR_TYPES)}
 
-            # CL: compare view vs purchase embeddings for users with both behaviors
-            run_cl = loss_fn.lambda_cl > 0 and (cl_every_k <= 1 or (step % cl_every_k == 0))
-            view_emb_cl: torch.Tensor | None = None
-            purch_emb_cl: torch.Tensor | None = None
-            if run_cl and beh_embs is not None:
-                view_u = users_per_beh.get("view", torch.empty(0, dtype=torch.long, device=device))
-                purch_u = users_per_beh.get("purchase", torch.empty(0, dtype=torch.long, device=device))
-                common = view_u[torch.isin(view_u, purch_u)]
-                if common.numel() >= 2:
-                    view_emb_cl = beh_embs["view"][common]
-                    purch_emb_cl = beh_embs["purchase"][common]
+            # Funnel scores on the SHARED set of purchase positives so the
+            # ordering s_view < s_cart < s_purchase is computed on matched (u,i).
+            funnel_scores: dict[str, torch.Tensor] | None = None
+            if loss_fn.lambda_conv > 0:
+                p_mask = bev == purchase_id
+                if p_mask.any():
+                    u_p = u_loc[p_mask]
+                    pp_p = pp_loc[p_mask]
+                    pos_emb_p = item_emb[pp_p]
+                    funnel_scores = {
+                        b: (beh_embs[b][u_p] * pos_emb_p).sum(-1)
+                        for b in BEHAVIOR_TYPES
+                    }
 
-            run_cold = cold_on and (cold_every_k <= 1 or (step % cold_every_k == 0))
+            lambdas_dict: dict[str, torch.Tensor] | None = None
+            if loss_fn.lambda_mono > 0:
+                lambdas_dict = _extract_per_behavior_lambdas(model)
+
+            # Skip CL on most steps when cl_every_k > 1: ~K times cheaper when lambda_cl > 0
+            run_cl = loss_fn.lambda_cl > 0 and (cl_every_k <= 1 or (step % cl_every_k == 0))
+            beh_embs_for_cl = (
+                {b: beh_embs[b].float() for b in BEHAVIOR_TYPES} if run_cl else None
+            )
+            users_per_beh_for_cl = users_per_beh if run_cl else None
 
         if not behavior_losses:
             n_skipped += 1
             continue
 
+        model_l2 = model.embedding_l2_norm()
         loss, log = loss_fn(
             behavior_losses=behavior_losses,
-            view_emb=view_emb_cl,
-            purchase_emb=purch_emb_cl,
+            beh_embs=beh_embs_for_cl,
+            users_per_beh=users_per_beh_for_cl,
+            scores=funnel_scores,
+            lambdas=lambdas_dict,
+            model_params=model_l2,
         )
         if not torch.isfinite(loss):
             raise FloatingPointError(
@@ -580,121 +493,27 @@ def train_epoch(
                 + ", ".join(f"{k}={v}" for k, v in log.items())
             )
 
-        # Backward warm TRUOC khi forward cold: cold loss distill ve warm emb DA
-        # detach nen hai graph doc lap; giu ca hai activation graph cung luc la
-        # nguyen nhan OOM. Gradient hai backward tu cong don truoc khi step.
         if amp:
             scaler.scale(loss).backward()
-        else:
-            loss.backward()
-
-        # ---- Cold-robust: forward phu cold-simulated cho distillation ----
-        # Main forward (tren) van WARM -> BPR/CL khong doi (regression-safe).
-        # Forward nay mo phong cold (ID-dropout + history-dropout), align theo
-        # cung node order voi warm vi chi xoa edge / thay self-embedding.
-        if run_cold:
-            warm_user_t = user_emb.detach()
-            warm_item_t = item_emb.detach()
-            del user_emb, item_emb, beh_embs
-            n_sub_user = subgraph["user"].x.size(0)
-            # Mo phong TRUE-cold: CUNG mot tap user (xac suat p_hist) vua mat het
-            # behavior edge vua bi thay self-embedding bang cold slot — khop dung
-            # dieu kien eval cua cold user that (0 canh + cold slot). Neu p_id va
-            # p_hist sample doc lap thi chi ~p_id*p_hist user thuc su cold: BPR bi
-            # user gan-warm chi phoi, cold_bpr_loss giam nhung cold val khong len.
-            sim_cold_u = (
-                torch.rand(n_sub_user, device=device, generator=generator) < cold_p_hist
-            )
-            cm_u = sim_cold_u.clone()
-            cold_mask = {"user": cm_u}
-            if cold_p_id > 0:
-                # ID-dropout doc lap bo sung (robustness nhe cho user/item warm).
-                cm_u |= (
-                    torch.rand(n_sub_user, device=device, generator=generator)
-                    < cold_p_id
-                )
-                cold_mask["product"] = (
-                    torch.rand(
-                        subgraph["product"].x.size(0), device=device, generator=generator
-                    )
-                    < cold_p_id
-                )
-            sub_cold = _make_cold_subgraph(
-                subgraph, cold_p_hist, generator, drop_user=sim_cold_u
-            )
-            l_cold_bpr = None
-            with torch.amp.autocast(
-                "cuda", dtype=_amp_dtype, enabled=amp and device.type == "cuda"
-            ):
-                ue_cold, ie_cold = model(sub_cold, ref_time=ref_time, cold_mask=cold_mask)
-                l_cold = cold_consistency_loss(ue_cold, warm_user_t) + cold_consistency_loss(
-                    ie_cold, warm_item_t
-                )
-                # BPR truc tiep tren forward cold (DropoutNet-style), CHI tren
-                # triplet purchase cua user dang true-cold-simulated. Distillation
-                # cosine chi keo cold emb ve phia warm emb — KHONG toi uu ranking:
-                # khi item embedding drift theo personalization, huong cold-slot
-                # thanh stale va cold metric sap dan theo epoch (cold user that
-                # khong co canh train nao -> ca segment dung chung MOT embedding,
-                # metric = chat luong cua mot ranking toan cuc duy nhat). BPR nay
-                # ep cold pathway rank purchase that len tren va tu bam theo item
-                # drift. Item side detach -> chi train duong user/cold-slot.
-                if cold_bpr_lambda > 0:
-                    mask_p = (bev == purchase_id) & sim_cold_u[u_loc]
-                    if mask_p.any() and N_items > 1:
-                        u_c = ue_cold[u_loc[mask_p]]
-                        pp_c = pp_loc[mask_p]
-                        neg_c = torch.randint(
-                            0, N_items - 1, (u_c.size(0), num_neg),
-                            device=device, generator=generator,
-                        )
-                        neg_c[neg_c >= pp_c.unsqueeze(-1)] += 1
-                        pos_s_c = (u_c * warm_item_t[pp_c]).sum(-1, keepdim=True)
-                        neg_s_c = torch.bmm(
-                            warm_item_t[neg_c], u_c.unsqueeze(-1)
-                        ).squeeze(-1)
-                        l_cold_bpr = bpr_loss(pos_s_c.float(), neg_s_c.float())
-            l_cold_total = cold_lambda * l_cold
-            if l_cold_bpr is not None:
-                l_cold_total = l_cold_total + cold_bpr_lambda * l_cold_bpr
-            del sub_cold, ue_cold, ie_cold
-            if not torch.isfinite(l_cold_total):
-                raise FloatingPointError(f"Non-finite cold loss at step={step}")
-            if amp:
-                scaler.scale(l_cold_total).backward()
-            else:
-                l_cold_total.backward()
-            log["loss/cold"] = float(l_cold.item())
-            total_cold_loss += float(l_cold.item())
-            if l_cold_bpr is not None:
-                log["loss/cold_bpr"] = float(l_cold_bpr.item())
-                total_cold_bpr_loss += float(l_cold_bpr.item())
-            n_cold_steps += 1
-
-        if amp:
             scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
             scaler.step(optimizer)
             scaler.update()
         else:
+            loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
             optimizer.step()
 
         if scheduler is not None:
             scheduler.step()
 
-        # EMA cold-slot cho eval (no-op khi decay<=0). Sau optimizer.step de bat
-        # gia tri cold-slot vua cap nhat.
-        model.update_cold_slot_ema()
-
         total_loss += log["loss/total"]
         total_cl_loss += float(log.get("loss/cl", 0.0))
         n_steps += 1
-        if progress_bar:
-            pbar.set_postfix(
-                loss=f"{log['loss/total']:.4f}",
-                cl=f"{log.get('loss/cl', 0.0):.4f}",
-            )
+        pbar.set_postfix(
+            loss=f"{log['loss/total']:.4f}",
+            cl=f"{log.get('loss/cl', 0.0):.4f}",
+        )
 
     if n_skipped > 0:
         logger.warning(
@@ -706,8 +525,6 @@ def train_epoch(
     return {
         "train/loss": total_loss / max(n_steps, 1),
         "train/cl_loss": total_cl_loss / max(n_steps, 1),
-        "train/cold_loss": total_cold_loss / max(n_cold_steps, 1),
-        "train/cold_bpr_loss": total_cold_bpr_loss / max(n_cold_steps, 1),
         "train/skipped_batches": float(n_skipped),
     }
 
@@ -723,8 +540,6 @@ def export_embeddings(
     use_bf16: bool = True,
     ref_time: float | None = None,
     sampler_seed: int | None = None,
-    user_is_cold: torch.Tensor | None = None,
-    item_is_cold: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     model.eval()
     d = model.embed_dim
@@ -740,14 +555,8 @@ def export_embeddings(
             seed_type="product",
             generator=sampler_generator,
         ).to(device)
-        cold_mask = None
-        if item_is_cold is not None and "product" in sub.node_types:
-            node_ids = sub["product"].x.cpu()
-            cold_mask = {"product": item_is_cold.to("cpu")[node_ids].to(device).bool()}
         with torch.amp.autocast("cuda", dtype=_amp_dtype, enabled=device.type == "cuda"):
-            _, item_local = model(
-                sub, ref_time=ref_time, cold_mask=cold_mask, use_cold_ema=True
-            )
+            _, item_local = model(sub, ref_time=ref_time)
         item_emb[start:end] = item_local.float().cpu()
 
     user_emb = torch.zeros(len(user_ids), d)
@@ -759,14 +568,8 @@ def export_embeddings(
             seed_type="user",
             generator=sampler_generator,
         ).to(device)
-        cold_mask = None
-        if user_is_cold is not None and "user" in sub.node_types:
-            node_ids = sub["user"].x.cpu()
-            cold_mask = {"user": user_is_cold.to("cpu")[node_ids].to(device).bool()}
         with torch.amp.autocast("cuda", dtype=_amp_dtype, enabled=device.type == "cuda"):
-            u_local, _ = model(
-                sub, ref_time=ref_time, cold_mask=cold_mask, use_cold_ema=True
-            )
+            u_local, _ = model(sub, ref_time=ref_time)
         user_emb[start:end] = u_local.float().cpu()
 
     return user_emb, item_emb
@@ -789,7 +592,6 @@ def eval_epoch(
     sampler_seed: int | None = None,
     ref_time: float | None = None,
     user_is_cold: torch.Tensor | None = None,
-    item_is_cold: torch.Tensor | None = None,
 ) -> dict[str, float]:
     valid_users = list(ground_truth.keys())
 
@@ -814,8 +616,6 @@ def eval_epoch(
         use_bf16=use_bf16,
         ref_time=ref_time,
         sampler_seed=seed if sampler_seed is None else sampler_seed,
-        user_is_cold=user_is_cold,
-        item_is_cold=item_is_cold,
     )
 
     eval_input = EvalInput(
@@ -826,16 +626,38 @@ def eval_epoch(
         exclude_items=exclude_items,
     )
 
-    user_segment = None
-    if user_is_cold is not None:
-        user_segment = user_is_cold.to("cpu")[eval_user_ids_filtered.cpu()].bool()
+    metrics = evaluator.evaluate(eval_input, batch_size=batch_size, mode="full_tiled")
 
-    return evaluator.evaluate(
-        eval_input,
-        batch_size=batch_size,
-        mode="full_tiled",
-        user_segment=user_segment,
-    )
+    # Cold/warm breakdown: re-rank the same embeddings on the cold-user and
+    # warm-user subsets so we can track cold-start quality without an extra
+    # forward pass. Overall metrics (and the primary metric) are unchanged.
+    if user_is_cold is not None:
+        flags = user_is_cold.cpu()[eval_user_ids_filtered.cpu()].bool()
+
+        def _subset_metrics(idx: torch.Tensor) -> dict[str, float]:
+            sub_uids = eval_user_ids_filtered[idx.to(eval_user_ids_filtered.device)]
+            sub_ids_list = sub_uids.tolist()
+            sub_input = EvalInput(
+                user_embeddings=user_emb[idx.to(user_emb.device)],
+                item_embeddings=item_emb,
+                eval_user_ids=sub_uids,
+                ground_truth={int(u): ground_truth[int(u)] for u in sub_ids_list},
+                exclude_items={int(u): exclude_items.get(int(u), []) for u in sub_ids_list},
+            )
+            return evaluator.evaluate(sub_input, batch_size=batch_size, mode="full_tiled")
+
+        cold_idx = torch.nonzero(flags, as_tuple=False).view(-1)
+        warm_idx = torch.nonzero(~flags, as_tuple=False).view(-1)
+        if cold_idx.numel() > 0:
+            for k, v in _subset_metrics(cold_idx).items():
+                metrics[f"cold_user/{k}"] = v
+        if warm_idx.numel() > 0:
+            for k, v in _subset_metrics(warm_idx).items():
+                metrics[f"warm_user/{k}"] = v
+        metrics["cold_user/n"] = float(cold_idx.numel())
+        metrics["warm_user/n"] = float(warm_idx.numel())
+
+    return metrics
 
 
 def _setup_a100_optimizations(cfg: TrainConfig, device: torch.device) -> None:
@@ -894,7 +716,7 @@ def train(
     device: torch.device,
     eval_ref_time: float | None = None,
     user_is_cold: torch.Tensor | None = None,
-    item_is_cold: torch.Tensor | None = None,
+    p_hist: float = 0.0,
 ) -> None:
     # Reproducibility: re-seed at the start of training so the RNG state here
     # is fixed regardless of how much randomness data/model setup consumed.
@@ -904,8 +726,6 @@ def train(
     _setup_a100_optimizations(cfg, device)
 
     model.to(device)
-    # Bat EMA cold-slot cho eval (set truoc compile de wrapper forward attribute).
-    model.cold_slot_ema_decay = cfg.cold_slot_ema_decay
 
     # Compile model with torch.compile (PyTorch 2.0+)
     if cfg.compile_model and hasattr(torch, "compile"):
@@ -923,60 +743,49 @@ def train(
     # on CUDA falls back to the global RNG if a device generator can't be made.
     train_generator = _make_generator(device, cfg.seed)
 
+    dataset = InteractionDataset(train_triplets)
     loader_generator = torch.Generator()
     loader_generator.manual_seed(cfg.seed)
-    has_ts = train_triplets.size(1) >= 4
-    if has_ts:
-        train_triplets = train_triplets[train_triplets[:, 3].argsort()]
-    dataset = InteractionDataset(train_triplets)
-    if has_ts:
-        loader = DataLoader(
-            dataset,
-            batch_sampler=TemporalBatchSampler(
-                len(dataset), cfg.batch_size, generator=loader_generator
-            ),
-            num_workers=cfg.num_workers,
-            pin_memory=cfg.pin_memory and device.type == "cuda",
-            persistent_workers=cfg.persistent_workers and cfg.num_workers > 0,
-            prefetch_factor=cfg.prefetch_factor if cfg.num_workers > 0 else None,
-        )
-        logger.info(
-            "TemporalBatchSampler: %d time-slice batches of %d (triplets sorted by ts)",
-            len(dataset) // cfg.batch_size,
-            cfg.batch_size,
-        )
-    else:
-        # Khong co cot ts -> khong the batch theo thoi gian, giu i.i.d. shuffle.
-        loader = DataLoader(
-            dataset,
-            batch_size=cfg.batch_size,
-            shuffle=True,
-            num_workers=cfg.num_workers,
-            pin_memory=cfg.pin_memory and device.type == "cuda",
-            drop_last=True,
-            persistent_workers=cfg.persistent_workers and cfg.num_workers > 0,
-            prefetch_factor=cfg.prefetch_factor if cfg.num_workers > 0 else None,
-            generator=loader_generator,
-        )
+    loader = DataLoader(
+        dataset,
+        batch_size=cfg.batch_size,
+        shuffle=True,
+        num_workers=cfg.num_workers,
+        pin_memory=cfg.pin_memory and device.type == "cuda",
+        drop_last=True,
+        persistent_workers=cfg.persistent_workers and cfg.num_workers > 0,
+        prefetch_factor=cfg.prefetch_factor if cfg.num_workers > 0 else None,
+        generator=loader_generator,
+    )
 
-    loss_fn = BPATMPLoss(
+    loss_fn = BPATMPTotalLoss(
         behavior_counts=behavior_counts,
-        lambda_cl=cfg.cl_weight,
-        tau=cfg.cl_tau,
+        lambda_cl=cfg.cl_weight if cfg.hierarchy_cl_enabled else 0.0,
+        lambda_conv=cfg.lambda_conv,
+        lambda_mono=cfg.lambda_mono,
+        lambda_wd=cfg.l2_lambda,
+        margin=cfg.funnel_margin,
+        tau=cfg.hierarchy_cl_tau,
         alpha=cfg.bpr_alpha,
         w_min=cfg.bpr_w_min,
+        cl_hard_k=cfg.hierarchy_cl_hard_k,
+        cl_min_pair_overlap=cfg.hierarchy_cl_min_pair_overlap,
+        cl_pair_weights=cfg.hierarchy_cl_pair_weights,
     ).to(device)
     logger.info(
-        "Loss: BPR(alpha=%.2f, w_min=%.2f, weights=%s) + lambda_cl=%.3f (tau=%.2f)",
+        "Loss: BPR(alpha=%.2f, w_min=%.2f, weights=%s) + lambda_cl=%.3f + lambda_conv=%.3f + lambda_mono=%.3f + lambda_wd=%.1e",
         cfg.bpr_alpha, cfg.bpr_w_min,
         loss_fn.bpr.task_weights.tolist(),
-        loss_fn.lambda_cl, loss_fn.cl.tau,
+        loss_fn.lambda_cl, loss_fn.lambda_conv, loss_fn.lambda_mono, loss_fn.lambda_wd,
     )
 
     history_ptr, history_item = build_user_history_csr(train_triplets, n_users=n_users)
     history_ptr = history_ptr.to(device)
     history_item = history_item.to(device)
 
+    item_pop_counts = torch.bincount(train_triplets[:, 1].long(), minlength=n_items).float()
+    pop_dist = (item_pop_counts + 1.0).pow(0.75)
+    pop_dist = (pop_dist / pop_dist.sum()).to(device)
     emb_params = list(model.input_proj.parameters()) + list(model.beh_proj.parameters())
     emb_ids = {id(p) for p in emb_params}
     other_params = [p for p in model.parameters() if id(p) not in emb_ids]
@@ -1015,8 +824,6 @@ def train(
     wandb_run = None
     if cfg.use_wandb:
         from src.training.checkpoint_manager import CheckpointManager
-        if cfg.quiet_checkpoint_logs:
-            logging.getLogger("src.training.checkpoint_manager").setLevel(logging.WARNING)
 
         wandb_manager = CheckpointManager(
             project=cfg.wandb_project,
@@ -1038,59 +845,23 @@ def train(
                 "cl_weight": cfg.cl_weight,
             }
         )
-        logger.info(
-            "W&B enabled — entity=%s project=%s run=%s",
-            cfg.wandb_entity,
-            cfg.wandb_project,
-            wandb_run.id,
-        )
+        logger.info("W&B enabled — project=%s run=%s", cfg.wandb_project, wandb_run.id)
 
     start_epoch = 0
     if wandb_manager is not None:
-        start_epoch = wandb_manager.load_checkpoint(
-            model, optimizer, scaler, device, scheduler=scheduler
-        )
+        start_epoch = wandb_manager.load_checkpoint(model, optimizer, scaler, device)
 
     if start_epoch == 0 and wandb_manager is None:
         latest_ckpt = _find_latest_checkpoint(save_dir)
         if latest_ckpt is not None:
-            start_epoch = _load_checkpoint(
-                latest_ckpt, model, optimizer, scaler, device, scheduler=scheduler
-            )
-
-    # Checkpoint cu khong luu scheduler state -> moi lan resume scheduler chay lai
-    # tu step 0: LR re-warmup tu ~0 lan nua, model gan nhu khong update nhieu epoch
-    # (metric "dong bang" ngay sau diem resume). Fast-forward ve dung vi tri.
-    if start_epoch > 0 and scheduler.last_epoch <= 0:
-        ff_steps = start_epoch * steps_per_epoch
-        for _ in range(ff_steps):
-            scheduler.step()
-        logger.warning(
-            "Checkpoint khong co scheduler state — fast-forward %d steps (epoch %d), lr=%.2e",
-            ff_steps, start_epoch, optimizer.param_groups[0]["lr"],
-        )
+            start_epoch = _load_checkpoint(latest_ckpt, model, optimizer, scaler, device)
 
     pm = cfg.primary_metric
-    # Eval set bi cold-user chiem ap dao (~88%) nen primary metric tong gan nhu
-    # la metric cua cold; warm dat dinh o epoch KHAC. Luu best rieng tung phan
-    # khuc va chi early-stop khi KHONG phan khuc nao con cai thien — neu khong,
-    # checkpoint bao cao cho warm khong phai epoch warm tot nhat.
-    best_tracks = {
-        "best": pm,
-        "best_warm": f"warm_user/{pm}",
-        "best_cold": f"cold_user/{pm}",
-    }
-    best_vals = {tag: -1.0 for tag in best_tracks}
-    best_epochs = {tag: -1 for tag in best_tracks}
+    best_primary = -1.0
     no_improve = 0
     metrics = {}
 
-    epoch_pbar = tqdm(
-        range(start_epoch, cfg.epochs),
-        desc="epochs",
-        dynamic_ncols=True,
-        disable=not cfg.progress_bar,
-    )
+    epoch_pbar = tqdm(range(start_epoch, cfg.epochs), desc="epochs", dynamic_ncols=True)
     for epoch in epoch_pbar:
         train_log = train_epoch(
             model,
@@ -1107,17 +878,10 @@ def train(
             cl_every_k=cfg.cl_every_k,
             history_ptr=history_ptr,
             history_item=history_item,
+            pop_dist=pop_dist,
             scheduler=scheduler,
             generator=train_generator,
-            cold_p_id=cfg.cold_p_id,
-            cold_p_hist=cfg.cold_p_hist,
-            cold_lambda=cfg.cold_lambda,
-            cold_bpr_lambda=cfg.cold_bpr_lambda,
-            cold_every_k=cfg.cold_every_k,
-            neg_frac_hard=cfg.neg_frac_hard,
-            neg_hard_pool=cfg.neg_hard_pool,
-            neg_skip_top=cfg.neg_skip_top,
-            progress_bar=cfg.progress_bar,
+            p_hist=p_hist,
         )
         train_loss = train_log["train/loss"]
         train_log["train/lr"] = float(optimizer.param_groups[0]["lr"])
@@ -1143,55 +907,50 @@ def train(
                 sampler_seed=cfg.eval_seed,
                 ref_time=eval_ref_time,
                 user_is_cold=user_is_cold,
-                item_is_cold=item_is_cold,
             )
+
+            overall_metrics = {k: v for k, v in metrics.items() if "/" not in k}
+            row += " | " + _format_main_metrics(overall_metrics)
 
             primary_val = metrics.get(pm, -1.0)
             postfix[pm.replace("@", "_")] = f"{primary_val:.4f}"
+            postfix["best_primary"] = f"{max(best_primary, primary_val):.4f}"
 
-            improved: list[str] = []
-            improved_for_stop = False  # cold la ranking toan cuc don le (noisy) ->
-            # KHONG dung no de reset early-stop, tranh keo dai run theo spike cold.
-            for tag, key in best_tracks.items():
-                val = metrics.get(key)
-                if val is None or val <= best_vals[tag]:
-                    continue
-                best_vals[tag] = val
-                best_epochs[tag] = epoch
-                improved.append(f"{key}={val:.4f}")
-                if tag != "best_cold":
-                    improved_for_stop = True
-                state = {
-                    "epoch": epoch,
-                    "model_state_dict": model.state_dict(),
-                    "metrics": metrics,
-                    "selected_by": key,
-                }
-                if tag == "best":
-                    # Chi best.pt giu optimizer/scaler (de resume); cac best
-                    # phan khuc chi can model_state_dict cho eval.
-                    state["optimizer_state_dict"] = optimizer.state_dict()
-                    state["scaler_state_dict"] = scaler.state_dict()
-                torch.save(state, save_dir / f"{tag}.pt")
-
-            if improved:
-                row += "  <- best: " + ", ".join(improved)
-            if improved_for_stop:
+            if primary_val > best_primary:
+                best_primary = primary_val
                 no_improve = 0
+                torch.save(
+                    {
+                        "epoch": epoch,
+                        "model_state_dict": model.state_dict(),
+                        "optimizer_state_dict": optimizer.state_dict(),
+                        "scaler_state_dict": scaler.state_dict(),
+                        "metrics": metrics,
+                    },
+                    save_dir / "best.pt",
+                )
+                row += "  <- best"
             else:
                 no_improve += 1
-            postfix["best_primary"] = f"{best_vals['best']:.4f}"
 
-        if cfg.progress_bar:
-            epoch_pbar.set_postfix(postfix)
+        epoch_pbar.set_postfix(postfix)
         logger.info(row)
-        if (epoch + 1) % cfg.eval_every == 0 and metrics:
-            _log_val_metrics(f"Epoch {epoch:03d} | val", metrics)
 
-        _save_checkpoint(
-            save_dir, epoch, model, optimizer, scaler, train_loss, metrics,
-            scheduler=scheduler,
-        )
+        if (epoch + 1) % cfg.eval_every == 0 and "cold_user/n" in metrics:
+            logger.info(
+                "  cold/warm | cold(n=%d) NDCG@10=%.4f NDCG@20=%.4f HR@10=%.4f | "
+                "warm(n=%d) NDCG@10=%.4f NDCG@20=%.4f HR@10=%.4f",
+                int(metrics.get("cold_user/n", 0)),
+                metrics.get("cold_user/NDCG@10", 0.0),
+                metrics.get("cold_user/NDCG@20", 0.0),
+                metrics.get("cold_user/HR@10", 0.0),
+                int(metrics.get("warm_user/n", 0)),
+                metrics.get("warm_user/NDCG@10", 0.0),
+                metrics.get("warm_user/NDCG@20", 0.0),
+                metrics.get("warm_user/HR@10", 0.0),
+            )
+
+        _save_checkpoint(save_dir, epoch, model, optimizer, scaler, train_loss, metrics)
 
         if wandb_manager is not None:
             wandb_run.log({**train_log, **metrics, "epoch": epoch})
@@ -1202,7 +961,6 @@ def train(
                 scaler=scaler,
                 loss=train_loss,
                 metrics=metrics,
-                scheduler=scheduler,
             )
             if not cloud_ok:
                 logger.error(
@@ -1213,28 +971,18 @@ def train(
 
         if no_improve >= cfg.patience:
             logger.info(
-                "Early stopping at epoch %d — khong phan khuc nao (overall/warm/cold) "
-                "cai thien %d lan eval lien tiep. Best: %s",
+                "Early stopping at epoch %d. Best %s=%.4f",
                 epoch,
-                cfg.patience,
-                _best_summary(best_tracks, best_vals, best_epochs),
+                pm,
+                best_primary,
             )
             break
 
-    # Final FULL-rank eval cho TUNG best checkpoint: best.pt (primary tong),
-    # best_warm.pt, best_cold.pt — moi phan khuc lay ket qua o epoch tot nhat
-    # cua chinh no thay vi doc tu checkpoint chon theo metric tong.
-    for tag, key in best_tracks.items():
-        ckpt_path = save_dir / f"{tag}.pt"
-        if not ckpt_path.exists():
-            continue
-        ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
-        model.load_state_dict(ckpt["model_state_dict"])
-        ck_epoch = int(ckpt.get("epoch", -1))
-        logger.info(
-            "FULL-rank val eval: %s (epoch %d, chon theo %s)...",
-            ckpt_path.name, ck_epoch, key,
-        )
+    best_path = save_dir / "best.pt"
+    if best_path.exists():
+        logger.info("Loading best.pt for final FULL-rank evaluation on all val users...")
+        best_ckpt = torch.load(best_path, map_location=device, weights_only=False)
+        model.load_state_dict(best_ckpt["model_state_dict"])
         final_val_metrics = eval_epoch(
             model,
             sampler,
@@ -1251,32 +999,35 @@ def train(
             sampler_seed=cfg.eval_seed,
             ref_time=eval_ref_time,
             user_is_cold=user_is_cold,
-            item_is_cold=item_is_cold,
         )
-        _log_val_metrics(f"FINAL VAL [{ckpt_path.name} @ epoch {ck_epoch}]", final_val_metrics)
-        suffix = "" if tag == "best" else f"_{tag.removeprefix('best_')}"
-        with open(save_dir / f"final_val_metrics{suffix}.json", "w") as f:
-            json.dump(
-                {
-                    "checkpoint": ckpt_path.name,
-                    "epoch": ck_epoch,
-                    "selected_by": key,
-                    "metrics": final_val_metrics,
-                },
-                f,
-                indent=2,
+        logger.info(
+            "FINAL VAL full-rank eval on best.pt: %s",
+            _format_main_metrics({k: v for k, v in final_val_metrics.items() if "/" not in k}),
+        )
+        if "cold_user/n" in final_val_metrics:
+            logger.info(
+                "FINAL VAL cold/warm | cold(n=%d) NDCG@10=%.4f NDCG@20=%.4f | warm(n=%d) NDCG@10=%.4f NDCG@20=%.4f",
+                int(final_val_metrics.get("cold_user/n", 0)),
+                final_val_metrics.get("cold_user/NDCG@10", 0.0),
+                final_val_metrics.get("cold_user/NDCG@20", 0.0),
+                int(final_val_metrics.get("warm_user/n", 0)),
+                final_val_metrics.get("warm_user/NDCG@10", 0.0),
+                final_val_metrics.get("warm_user/NDCG@20", 0.0),
             )
+        with open(save_dir / "final_val_metrics.json", "w") as f:
+            json.dump(final_val_metrics, f, indent=2)
         if wandb_run is not None:
-            prefix = "final/val" if tag == "best" else f"final_{tag.removeprefix('best_')}/val"
-            wandb_run.log({f"{prefix}/{k}": v for k, v in final_val_metrics.items()})
+            wandb_run.log(
+                {f"final/val/{k}": v for k, v in final_val_metrics.items()}
+            )
 
     if wandb_run is not None:
         wandb_run.finish()
 
     logger.info(
-        "Training complete. Best (subsample eval): %s. "
-        "Run test eval: python scripts/evaluate.py --checkpoint %s --split test "
-        "(warm: best_warm.pt, cold: best_cold.pt)",
-        _best_summary(best_tracks, best_vals, best_epochs),
+        "Training complete. Best %s (subsample)=%.4f. "
+        "Run test eval: python scripts/evaluate.py --checkpoint %s --split test",
+        pm,
+        best_primary,
         save_dir / "best.pt",
     )
