@@ -2,15 +2,12 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
-from tqdm import tqdm
 
 from src.model.bpatmp import BPATMPModel
 from src.core.contracts import BEHAVIOR_TYPES, EvalInput
@@ -24,36 +21,6 @@ from src.training.losses import (
 from src.core.evaluator import TemporalSplitEvaluator
 
 logger = logging.getLogger(__name__)
-
-
-def _tqdm_disabled() -> bool:
-    """Tat tqdm tren Colab (chi giu log dau/giua/cuoi moi epoch).
-
-    Tat khi (theo thu tu uu tien):
-      - env TQDM_FORCE=1  -> luon BAT (de debug local), bo qua cac check duoi.
-      - env TQDM_DISABLE=1 -> luon TAT.
-      - dang chay tren Google Colab (notebook kernel).
-      - output khong phai terminal that (vd chay `!python ...` tren Colab,
-        redirect ra file/log) -> stderr/stdout khong phai TTY.
-    Local terminal that van hien bar binh thuong.
-    """
-    if os.environ.get("TQDM_FORCE", "").lower() in {"1", "true", "yes"}:
-        return False
-    if os.environ.get("TQDM_DISABLE", "").lower() in {"1", "true", "yes"}:
-        return True
-    if "google.colab" in sys.modules:
-        return True
-    # tqdm ghi ra stderr theo mac dinh; coi la non-interactive neu khong phai TTY.
-    stream = sys.stderr if sys.stderr is not None else sys.stdout
-    try:
-        if not stream.isatty():
-            return True
-    except Exception:
-        return True
-    return False
-
-
-TQDM_DISABLE = _tqdm_disabled()
 
 
 def set_seed(seed: int = 42, deterministic: bool = False) -> None:
@@ -391,10 +358,8 @@ def train_epoch(
     # In tien trinh 3 lan moi epoch: step dau, giua, cuoi.
     log_steps = {0, n_total // 2, n_total - 1}
 
-    # Tat han tqdm tren Colab (TQDM_DISABLE) de tranh flood log moi step;
-    # chi con log dau/giua/cuoi o duoi. Local terminal van hien bar binh thuong.
-    pbar = tqdm(dataloader, desc="train", leave=False, dynamic_ncols=True, disable=TQDM_DISABLE)
-    for step, raw_batch in enumerate(pbar):
+    # Khong dung tqdm: chi log o step dau/giua/cuoi moi epoch (xem log_steps).
+    for step, raw_batch in enumerate(dataloader):
         raw_batch = raw_batch.to(device)
         users_g = raw_batch[:, 0]
         items_g = raw_batch[:, 1]
@@ -548,10 +513,6 @@ def train_epoch(
         total_loss += log["loss/total"]
         total_cl_loss += float(log.get("loss/cl", 0.0))
         n_steps += 1
-        pbar.set_postfix(
-            loss=f"{log['loss/total']:.4f}",
-            cl=f"{log.get('loss/cl', 0.0):.4f}",
-        )
 
         if step in log_steps:
             logger.info(
@@ -908,8 +869,7 @@ def train(
     no_improve = 0
     metrics = {}
 
-    epoch_pbar = tqdm(range(start_epoch, cfg.epochs), desc="epochs", dynamic_ncols=True, disable=TQDM_DISABLE)
-    for epoch in epoch_pbar:
+    for epoch in range(start_epoch, cfg.epochs):
         train_log = train_epoch(
             model,
             sampler,
@@ -935,8 +895,6 @@ def train(
 
         row = f"Epoch {epoch:03d} | " + _format_main_metrics(train_log)
 
-        postfix: dict[str, str] = {"loss": f"{train_loss:.4f}"}
-
         if (epoch + 1) % cfg.eval_every == 0:
             metrics = eval_epoch(
                 model,
@@ -960,8 +918,6 @@ def train(
             row += " | " + _format_main_metrics(overall_metrics)
 
             primary_val = metrics.get(pm, -1.0)
-            postfix[pm.replace("@", "_")] = f"{primary_val:.4f}"
-            postfix["best_primary"] = f"{max(best_primary, primary_val):.4f}"
 
             if primary_val > best_primary:
                 best_primary = primary_val
@@ -980,7 +936,6 @@ def train(
             else:
                 no_improve += 1
 
-        epoch_pbar.set_postfix(postfix)
         logger.info(row)
 
         if (epoch + 1) % cfg.eval_every == 0 and "cold_user/n" in metrics:
