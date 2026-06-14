@@ -29,11 +29,26 @@ logger = logging.getLogger(__name__)
 def _tqdm_disabled() -> bool:
     """Tat tqdm tren Colab (chi giu log dau/giua/cuoi moi epoch).
 
-    Tat khi: dang chay tren Google Colab, hoac dat env TQDM_DISABLE=1.
+    Tat khi (theo thu tu uu tien):
+      - env TQDM_FORCE=1  -> luon BAT (de debug local), bo qua cac check duoi.
+      - env TQDM_DISABLE=1 -> luon TAT.
+      - dang chay tren Google Colab (notebook kernel).
+      - output khong phai terminal that (vd chay `!python ...` tren Colab,
+        redirect ra file/log) -> stderr/stdout khong phai TTY.
+    Local terminal that van hien bar binh thuong.
     """
+    if os.environ.get("TQDM_FORCE", "").lower() in {"1", "true", "yes"}:
+        return False
     if os.environ.get("TQDM_DISABLE", "").lower() in {"1", "true", "yes"}:
         return True
     if "google.colab" in sys.modules:
+        return True
+    # tqdm ghi ra stderr theo mac dinh; coi la non-interactive neu khong phai TTY.
+    stream = sys.stderr if sys.stderr is not None else sys.stdout
+    try:
+        if not stream.isatty():
+            return True
+    except Exception:
         return True
     return False
 
