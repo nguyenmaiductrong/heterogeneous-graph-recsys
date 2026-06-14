@@ -121,6 +121,7 @@ def main():
     sc = cfg.get("sampler", {})
     sampler = BehaviorAwareNeighborSampler(
         data=hetero,
+        num_nodes_dict=node_counts,  # size CSR by true node counts, not inferred
         config=NeighborSamplerConfig(
             hop1_budget=sc.get("hop1_budget", 10),
             hop2_budget=sc.get("hop2_budget", 5),

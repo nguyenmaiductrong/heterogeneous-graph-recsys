@@ -308,6 +308,7 @@ def main():
     )
     sampler = BehaviorAwareNeighborSampler(
         data=hetero,
+        num_nodes_dict=node_counts,  # size CSR by true node counts, not inferred
         config=sampler_config,
         device=device,  # Put CSR indices on GPU for faster sampling
     )
