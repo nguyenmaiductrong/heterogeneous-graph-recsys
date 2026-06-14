@@ -355,6 +355,10 @@ def train_epoch(
     n_skipped = 0  # batches dropped because no positive items found in subgraph
     purchase_id = BEHAVIOR_TYPES.index("purchase")
 
+    n_total = len(dataloader)
+    # In tien trinh 3 lan moi epoch: step dau, giua, cuoi.
+    log_steps = {0, n_total // 2, n_total - 1}
+
     pbar = tqdm(dataloader, desc="train", leave=False, dynamic_ncols=True)
     for step, raw_batch in enumerate(pbar):
         raw_batch = raw_batch.to(device)
@@ -514,6 +518,15 @@ def train_epoch(
             loss=f"{log['loss/total']:.4f}",
             cl=f"{log.get('loss/cl', 0.0):.4f}",
         )
+
+        if step in log_steps:
+            logger.info(
+                "  [train %d/%d] loss=%.4f (avg=%.4f) | cl=%.4f | lr=%.2e",
+                step + 1, n_total,
+                log["loss/total"], total_loss / max(n_steps, 1),
+                log.get("loss/cl", 0.0),
+                optimizer.param_groups[0]["lr"],
+            )
 
     if n_skipped > 0:
         logger.warning(
