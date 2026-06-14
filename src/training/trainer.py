@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -22,6 +24,21 @@ from src.training.losses import (
 from src.core.evaluator import TemporalSplitEvaluator
 
 logger = logging.getLogger(__name__)
+
+
+def _tqdm_disabled() -> bool:
+    """Tat tqdm tren Colab (chi giu log dau/giua/cuoi moi epoch).
+
+    Tat khi: dang chay tren Google Colab, hoac dat env TQDM_DISABLE=1.
+    """
+    if os.environ.get("TQDM_DISABLE", "").lower() in {"1", "true", "yes"}:
+        return True
+    if "google.colab" in sys.modules:
+        return True
+    return False
+
+
+TQDM_DISABLE = _tqdm_disabled()
 
 
 def set_seed(seed: int = 42, deterministic: bool = False) -> None:
@@ -359,7 +376,9 @@ def train_epoch(
     # In tien trinh 3 lan moi epoch: step dau, giua, cuoi.
     log_steps = {0, n_total // 2, n_total - 1}
 
-    pbar = tqdm(dataloader, desc="train", leave=False, dynamic_ncols=True)
+    # Tat han tqdm tren Colab (TQDM_DISABLE) de tranh flood log moi step;
+    # chi con log dau/giua/cuoi o duoi. Local terminal van hien bar binh thuong.
+    pbar = tqdm(dataloader, desc="train", leave=False, dynamic_ncols=True, disable=TQDM_DISABLE)
     for step, raw_batch in enumerate(pbar):
         raw_batch = raw_batch.to(device)
         users_g = raw_batch[:, 0]
@@ -874,7 +893,7 @@ def train(
     no_improve = 0
     metrics = {}
 
-    epoch_pbar = tqdm(range(start_epoch, cfg.epochs), desc="epochs", dynamic_ncols=True)
+    epoch_pbar = tqdm(range(start_epoch, cfg.epochs), desc="epochs", dynamic_ncols=True, disable=TQDM_DISABLE)
     for epoch in epoch_pbar:
         train_log = train_epoch(
             model,
