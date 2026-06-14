@@ -76,11 +76,11 @@ evaluation:
   metrics: ["HR@1", "HR@5", "HR@10", "HR@20", "HR@50", "NDCG@1", "NDCG@5", "NDCG@10", "NDCG@20", "NDCG@50"]
 
 wandb:
-  artifact_name: graph-recsys-v1
+  artifact_name: graph-recsys-v1-fix
   enabled: true
   entity: nguyenmaiductrong37-h-c-vi-n-c-ng-ngh-b-u-ch-nh-vi-n-th-ng
   project: graph-recsys
-  run_name: graph-recsys-v1
+  run_name: graph-recsys-v1-fix
   save_every: 1
 
 a100:
