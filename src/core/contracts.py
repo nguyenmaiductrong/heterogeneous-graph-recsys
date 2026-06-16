@@ -101,16 +101,13 @@ class GatedOutput:
 
 @dataclass
 class LossInput:
-    """Consolidated input for multi-task BPR + CL loss.
-
-    Assembled by: P4 from GatedOutput + neg sampling
-    """
+    """Consolidated input for multi-task BPR + CL loss."""
 
     user_emb: Tensor  # (B, d)
     pos_item_emb: Tensor  # (B, d)
     neg_item_emb: Tensor  # (B, num_neg, d)
     behavior_ids: Tensor  # (B,) in {0,1,2}
-    cl_loss: Tensor  # scalar from P3
+    cl_loss: Tensor  # scalar
 
     def validate(self) -> None:
         B = self.user_emb.size(0)

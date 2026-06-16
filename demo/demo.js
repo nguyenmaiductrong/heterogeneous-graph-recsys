@@ -98,10 +98,8 @@
         </div>`;
     }
 
-    // ----- big-box architecture diagram (tongquan.png style) -----
-    // Each "box" is a major module; its `chips` are the clickable sub-layers
-    // mapping to step indices (like Tokenizer/Text-Encoder inside the big
-    // "Text Representation Generator" box of Diffusion Explainer).
+    // Big-box architecture diagram. Each "box" is a major module; its `chips`
+    // are the clickable sub-layers mapping to step indices.
     function archBlueprint(tab) {
         if (tab === "train") {
             return [
@@ -183,7 +181,6 @@
             <div class="slide-body">${s.body()}</div>
             ${nav}
         </div>`;
-        // (controls bar above the pipeline already provides Play / scrub / prev-next)
     }
 
     // ===================== TRAIN steps =====================

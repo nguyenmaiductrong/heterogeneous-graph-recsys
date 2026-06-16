@@ -70,19 +70,15 @@ class BehaviorAwareWeight(nn.Module):
     ) -> None:
         super().__init__()
 
-        # W_ρ: per-relation base weight
         self.W_rho = nn.Parameter(torch.empty(n_relations, out_dim, in_dim))
-        # A_ρ: per-relation low-rank factor
         self.A_rho = nn.Parameter(torch.empty(n_relations, out_dim, rank))
-        # B_ρ: per-relation low-rank factor
         self.B_rho = nn.Parameter(torch.empty(n_relations, in_dim, rank))
-        # z_β: per-behavior scaling (the key difference from old impl)
         self.z_beta = nn.Parameter(torch.empty(n_beta, rank))
 
         nn.init.kaiming_uniform_(self.W_rho)
         nn.init.kaiming_uniform_(self.A_rho)
         nn.init.kaiming_uniform_(self.B_rho)
-        nn.init.ones_(self.z_beta)  # Initialize to 1 for stable start
+        nn.init.ones_(self.z_beta)
 
     def forward(self, rho: int, beta: int) -> Tensor:
         """Compute W_{ρ,β} = W_ρ + A_ρ · diag(z_β) · B_ρᵀ"""
@@ -488,10 +484,8 @@ class IntentCodebook(nn.Module):
     """Shared low-rank intent codebook. Per-node attention over a small set
     of E intent embeddings; weighted-sum is added back as a residual.
 
-    Decoupled from behavior on purpose: a user's intent is the SAME across
-    view/cart/purchase. Counter-position vs MixRec's H^(u)_k which decouples
-    intents per behavior — sharing the codebook gives cross-behavior intent
-    sharing for free.
+    The codebook is shared across behaviors: a user's intent is the same
+    across view/cart/purchase.
     """
 
     def __init__(self, n_intents: int = 32, dim: int = EMBED_DIM):

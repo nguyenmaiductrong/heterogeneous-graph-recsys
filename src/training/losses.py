@@ -79,7 +79,7 @@ class MultiTaskBPRLoss(nn.Module):
 
 
 class HierarchicalMBCL(nn.Module):
-    """Directional, hierarchical InfoNCE with per-pair gating (Step 2.5).
+    """Directional, hierarchical InfoNCE with per-pair gating.
 
     Each (weak, strong, weight) pair computes its InfoNCE on the intersection
     of users that have both behaviors in the current batch — independently of
